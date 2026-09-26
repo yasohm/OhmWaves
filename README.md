@@ -32,6 +32,14 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
 
 ## Screenshots
 
+<p align="center">
+  <img src="docs/screenshots/slideshow.gif" alt="Slideshow cycling through the Welcome, Home, Search, Library and Now Playing screens" width="340" />
+</p>
+
+<details>
+<summary>View each screen</summary>
+<br />
+
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/welcome.png" alt="Welcome screen with orange wave lines above the wordmark and sign-up buttons" width="200" /><br /><sub><b>Welcome</b></sub></td>
@@ -44,6 +52,8 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
     <td></td>
   </tr>
 </table>
+
+</details>
 
 These are the design mockups the interface is built from. The running app uses the same layout and styling, filled with your own music. It uses a warm near-black canvas, cream type, an orange accent (`#FF6A2B`), wide display headings, monospace labels, and generated stripe, ring and sunburst covers for items without artwork.
 
