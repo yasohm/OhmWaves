@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/OhmWaveLogo.png" alt="OhmWave Logo" width="250" />
+  <img src="img/ohmwaves-logo-on-dark.png" alt="OhmWave Logo" width="250" />
 </p>
 
 <h1 align="center">OhmWave</h1>

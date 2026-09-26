@@ -3,6 +3,7 @@ import sys
 import re
 import json
 import time
+import threading
 import requests
 from pathlib import Path
 from ytmusicapi import YTMusic
@@ -31,6 +32,8 @@ class YTMusicScraper:
         self.download_dir = os.path.abspath(download_dir)
         os.makedirs(self.download_dir, exist_ok=True)
         self.bin_dir = BIN_DIR if os.path.exists(BIN_DIR) else None
+        self._stream_cache = {}
+        self._stream_lock = threading.Lock()
 
     def search_artist(self, artist_name, limit=10):
         """Search for an artist and get top songs and albums."""
@@ -153,6 +156,7 @@ class YTMusicScraper:
                         "duration": track.get("duration", ""),
                         "duration_seconds": track.get("duration_seconds", 0),
                         "thumbnails": thumbnails,
+                        "cover": self.best_thumbnail(thumbnails),
                         "year": year,
                         "videoId": vid,
                         "url": f"https://www.youtube.com/watch?v={vid}"
@@ -223,6 +227,7 @@ class YTMusicScraper:
         artist_name = self._extract_artist_name(artists) or fallback_artist
         album_data = item.get("album")
         album_name = album_data.get("name") if isinstance(album_data, dict) else (item.get("album") or "Single")
+        thumbnails = item.get("thumbnails") or item.get("thumbnail") or []
 
         return {
             "id": vid,
@@ -230,10 +235,111 @@ class YTMusicScraper:
             "title": item.get("title", "Unknown Title"),
             "artist": artist_name,
             "album": album_name,
-            "duration": item.get("duration", ""),
-            "thumbnails": item.get("thumbnails", []),
+            "duration": item.get("duration") or item.get("length") or "",
+            "thumbnails": thumbnails,
+            "cover": self.best_thumbnail(thumbnails),
             "url": f"https://www.youtube.com/watch?v={vid}" if vid else ""
         }
+
+    @staticmethod
+    def best_thumbnail(thumbnails, size=544):
+        """Return a crisp artwork URL, upscaling Google-hosted square thumbnails."""
+        if not thumbnails:
+            return None
+        url = thumbnails[-1].get("url") if isinstance(thumbnails[-1], dict) else None
+        if url and "googleusercontent.com" in url:
+            url = re.sub(r"=w\d+-h\d+", f"=w{size}-h{size}", url)
+            url = re.sub(r"=s\d+$", f"=s{size}", url)
+        return url
+
+    # --- Catalog helpers used by the recommendation engine -----------------
+
+    def get_related_tracks(self, video_id, limit=25):
+        """YouTube Music radio for a track: the strongest item-to-item signal available."""
+        data = self.ytmusic.get_watch_playlist(videoId=video_id, radio=True, limit=limit)
+        return [self._parse_song_item(t) for t in data.get("tracks", [])
+                if t.get("videoId") and t.get("videoId") != video_id]
+
+    def get_artist_top_tracks(self, artist_name, limit=10):
+        """Popular songs whose primary artist matches ``artist_name``."""
+        wanted = artist_name.strip().lower()
+        results = self.ytmusic.search(artist_name, filter="songs", limit=limit * 2)
+        songs = [self._parse_song_item(s) for s in results if s.get("videoId")]
+        matching = [s for s in songs if s["artist"].split(",")[0].strip().lower() == wanted]
+        return (matching or songs)[:limit]
+
+    def get_trending_tracks(self, limit=25, country="ZZ"):
+        """Global chart tracks for cold-start recommendations."""
+        try:
+            charts = self.ytmusic.get_charts(country)
+            playlist_id = next((p.get("playlistId") for p in charts.get("videos", []) if p.get("playlistId")), None)
+            if playlist_id:
+                playlist = self.ytmusic.get_playlist(playlist_id, limit=limit)
+                tracks = [self._parse_song_item(t) for t in playlist.get("tracks", []) if t.get("videoId")]
+                if tracks:
+                    return tracks[:limit]
+        except Exception as err:
+            print(f"Charts error: {err}")
+        results = self.ytmusic.search("top hits this week", filter="songs", limit=limit)
+        return [self._parse_song_item(s) for s in results if s.get("videoId")][:limit]
+
+    @staticmethod
+    def read_embedded_artwork(filepath):
+        """Return (bytes, mime) for cover art embedded in a local audio file, or None."""
+        try:
+            audio = mutagen.File(filepath)
+        except Exception:
+            return None
+        if audio is None:
+            return None
+        pictures = getattr(audio, "pictures", None)
+        if pictures:
+            return pictures[0].data, pictures[0].mime or "image/jpeg"
+        tags = audio.tags
+        if tags is None:
+            return None
+        if hasattr(tags, "getall"):
+            frames = tags.getall("APIC")
+            if frames:
+                return frames[0].data, frames[0].mime or "image/jpeg"
+        covers = tags.get("covr") if hasattr(tags, "get") else None
+        if covers:
+            cover = covers[0]
+            mime = "image/png" if getattr(cover, "imageformat", None) == MP4Cover.FORMAT_PNG else "image/jpeg"
+            return bytes(cover), mime
+        return None
+
+    # --- Instant streaming -------------------------------------------------
+
+    def resolve_stream(self, video_id, force=False):
+        """Resolve (and cache) a direct audio URL so tracks play without downloading."""
+        now = time.time()
+        with self._stream_lock:
+            cached = self._stream_cache.get(video_id)
+            if cached and not force and cached["expires_at"] > now:
+                return cached
+        ydl_opts = {
+            "format": "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio",
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "js_runtimes": {"node": {}},
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+        expire_match = re.search(r"[?&]expire=(\d+)", info["url"])
+        expires_at = int(expire_match.group(1)) - 300 if expire_match else now + 3 * 3600
+        entry = {
+            "url": info["url"],
+            "headers": dict(info.get("http_headers") or {}),
+            "mime": f"audio/{'mp4' if info.get('ext') == 'm4a' else info.get('ext', 'webm')}",
+            "expires_at": expires_at,
+        }
+        with self._stream_lock:
+            if len(self._stream_cache) > 500:
+                self._stream_cache = {k: v for k, v in self._stream_cache.items() if v["expires_at"] > now}
+            self._stream_cache[video_id] = entry
+        return entry
 
     def _extract_artist_name(self, artists):
         if isinstance(artists, list) and len(artists) > 0:
