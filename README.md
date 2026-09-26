@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="img/ohmwaves-logo-on-dark.png" alt="OhmWave Logo" width="250" />
+  <img src="img/ohmwaves-logo-on-dark.png" alt="OhmWave Logo" width="400" />
 </p>
-
-<h1 align="center">OhmWave</h1>
-
 <p align="center">
   Local music search, downloads, playback, and recommendations powered by YouTube Music.
 </p>
