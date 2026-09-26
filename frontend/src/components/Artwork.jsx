@@ -1,16 +1,12 @@
 import { useState } from 'react';
-import { Music2 } from 'lucide-react';
-import { hueFor } from '../lib/tracks';
+import PatternArt from './PatternArt';
 
-/** Cover art with a deterministic gradient placeholder while loading or when art is missing. */
-export default function Artwork({ src, title = '', size, rounded = false, className = '' }) {
+/** Cover art over a generative pattern, which shows while loading and when art is missing. */
+export default function Artwork({ src, title = '', size, rounded = false, className = '', variant, palette }) {
   const [failedSrc, setFailedSrc] = useState(null);
   const showImage = src && failedSrc !== src;
-  return <span
-    className={`artwork ${rounded ? 'artwork--round' : ''} ${className}`}
-    style={{ '--art-hue': hueFor(title), ...(size ? { width: size, height: size } : null) }}
-  >
-    <Music2 aria-hidden="true" className="artwork__icon" />
+  return <span className={`artwork ${rounded ? 'artwork--round' : ''} ${className}`} style={size ? { width: size, height: size } : undefined}>
+    <PatternArt seed={title} variant={variant} palette={palette} />
     {showImage && <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailedSrc(src)} />}
   </span>;
 }

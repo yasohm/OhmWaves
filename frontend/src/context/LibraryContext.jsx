@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, USER_ID } from '../lib/api';
 import { libraryFileToTrack, normalizeTrack } from '../lib/tracks';
 import { useToast } from './ToastContext';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const LibraryContext = createContext(null);
 
@@ -18,6 +19,7 @@ export function LibraryProvider({ children }) {
   const [jobs, setJobs] = useState({});
   const [settings, setSettingsState] = useState(readSettings);
   const timersRef = useRef({});
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const refreshFiles = useCallback(async () => {
     try {
@@ -105,6 +107,9 @@ export function LibraryProvider({ children }) {
     }
   }, [notify]);
 
+  /** Ask before deleting a file from disk; the dialog lives here so any screen can use it. */
+  const requestDelete = useCallback((track) => setPendingDelete(track), []);
+
   const downloadedTracks = useMemo(() => files.map(libraryFileToTrack), [files]);
 
   /** Prefer the local copy of a track when we already have it on disk. */
@@ -116,10 +121,16 @@ export function LibraryProvider({ children }) {
 
   const value = useMemo(() => ({
     likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles,
-    jobs, download, deleteFile, settings, setSettings, findLocal,
-  }), [likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles, jobs, download, deleteFile, settings, setSettings, findLocal]);
+    jobs, download, deleteFile, requestDelete, settings, setSettings, findLocal,
+  }), [likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles, jobs, download, deleteFile, requestDelete, settings, setSettings, findLocal]);
 
-  return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
+  return <LibraryContext.Provider value={value}>
+    {children}
+    <ConfirmDialog open={!!pendingDelete} title="Delete from this device?"
+      message={pendingDelete ? `“${pendingDelete.title}” will be permanently removed from your downloads.` : ''}
+      confirmLabel="Delete" onCancel={() => setPendingDelete(null)}
+      onConfirm={() => { deleteFile(pendingDelete); setPendingDelete(null); }} />
+  </LibraryContext.Provider>;
 }
 
 export const useLibrary = () => useContext(LibraryContext);

@@ -24,14 +24,14 @@ export default function AlbumView({ album }) {
   }, [album]);
 
   const list = tracks || [];
-  const meta = [album.artist, album.year, list.length ? `${list.length} ${list.length === 1 ? 'song' : 'songs'}` : '', totalDurationLabel(list)].filter(Boolean).join(' • ');
+  const meta = [album.artist, album.year, list.length ? `${list.length} ${list.length === 1 ? 'song' : 'songs'}` : '', totalDurationLabel(list)].filter(Boolean).join(' · ');
 
   return <div className="page page--collection">
-    <CollectionHero kicker={album.type || 'Album'} title={album.title} meta={meta} cover={album.cover} tracks={list} source={album.title} />
+    <CollectionHero kicker={album.type || 'Album'} title={album.title} meta={meta} cover={album.cover} tracks={list} source={album.title} sourceKind="album" />
     {status === 'loading' && <ListSkeleton />}
     {status === 'error' && <EmptyState icon={Disc3} title="Couldn’t load this album">Check your connection and try again.</EmptyState>}
     {status === 'ready' && (list.length
-      ? <TrackList tracks={list} source={album.title} showAlbum={false} />
+      ? <TrackList tracks={list} source={album.title} sourceKind="album" showAlbum={false} />
       : <EmptyState icon={Disc3} title="No playable tracks">This album has no tracks available to stream.</EmptyState>)}
   </div>;
 }

@@ -21,13 +21,13 @@ export default function QueuePanel({ onClose, embedded = false }) {
   const auto = upcoming.filter((t) => t.autoplay);
   const content = <>
     {current ? <>
-      <h3 className="eyebrow">Now playing</h3>
+      <h3 className="mono-label">Now playing</h3>
       <ul className="queue-list"><QueueItem track={current} current paused={!isPlaying} /></ul>
       {manual.length > 0 && <>
-        <h3 className="eyebrow">Next {source ? `from ${source}` : 'up'}</h3>
+        <h3 className="mono-label">Next {source ? `from ${source}` : 'up'}</h3>
         <ul className="queue-list">{manual.map((t) => <QueueItem key={t.qid} track={t} onPlay={() => jumpTo(t.qid)} onRemove={() => removeFromQueue(t.qid)} />)}</ul>
       </>}
-      <h3 className="eyebrow eyebrow--accent"><Sparkles aria-hidden="true" />Autoplay: picked for you</h3>
+      <h3 className="mono-label mono-label--accent"><Sparkles aria-hidden="true" />Autoplay: picked for you</h3>
       {auto.length > 0
         ? <ul className="queue-list">{auto.map((t) => <QueueItem key={t.qid} track={t} onPlay={() => jumpTo(t.qid)} onRemove={() => removeFromQueue(t.qid)} />)}</ul>
         : <p className="muted small">Similar songs will appear here as your queue runs low.</p>}

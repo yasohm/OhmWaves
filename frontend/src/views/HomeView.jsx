@@ -1,83 +1,100 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Heart, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff } from 'lucide-react';
-import { api, USER_ID, warmTrack } from '../lib/api';
-import { greeting, normalizeTrack } from '../lib/tracks';
+import { useState } from 'react';
+import { Bell, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Omega } from 'lucide-react';
+import { greeting } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
+import useHomeFeed from '../hooks/useHomeFeed';
 import { ArtistCard, Shelf, TrackCard } from '../components/Shelf';
 import { ShelfSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import Artwork from '../components/Artwork';
+import TrackMenu from '../components/TrackMenu';
 import { GENRES } from './genres';
 
-// Stale-while-revalidate: coming back to Home is instant, then quietly refreshes.
-let cachedFeed = null;
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'mixes', label: 'For you', sections: (id) => id === 'for-you' || id === 'on-repeat' || id.startsWith('because-') },
+  { id: 'recent', label: 'Recent', sections: (id) => id === 'recent' },
+  { id: 'trending', label: 'Trending', sections: (id) => id === 'trending' || id === 'top-artists' },
+];
 
-function useHomeFeed() {
-  const [feed, setFeed] = useState(cachedFeed);
-  const [status, setStatus] = useState(cachedFeed ? 'ready' : 'loading');
-  const [refreshing, setRefreshing] = useState(false);
+const displayTitle = (section) => (section.id === 'for-you' ? 'Tuned for you' : section.title);
+const badgeFor = (section, i) => {
+  if (section.id === 'for-you') return String(i + 1).padStart(2, '0');
+  if (section.id === 'trending') return i < 3 ? `#${i + 1}` : null;
+  return null;
+};
 
-  const load = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const data = await api.get(`/api/home/${USER_ID}`);
-      const sections = (data.sections || []).map((s) => ({
-        ...s,
-        // Reasons only add information in the personal mix, not in "Because you like X".
-        tracks: (s.tracks || []).map((t) => normalizeTrack(s.id === 'for-you' ? t : { ...t, reason: null })),
-      }));
-      cachedFeed = { ...data, sections };
-      (sections.find((s) => s.id === 'for-you') || sections[0])?.tracks.slice(0, 3).forEach(warmTrack);
-      setFeed(cachedFeed);
-      setStatus('ready');
-    } catch (error) {
-      if (!cachedFeed) setStatus('error');
-      setFeed((f) => (f ? { ...f, error: error.message } : f));
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-  return { feed, status, refreshing, reload: load };
-}
-
-function QuickTile({ label, cover, icon: Icon, onPlay, active, playing, buffering }) {
+function QuickTile({ label, cover, variant, palette, onPlay, active, playing, buffering }) {
   return <button type="button" className={`quick-tile ${active ? 'is-current' : ''}`} onClick={onPlay} aria-label={`Play ${label}`}>
-    {Icon ? <span className="quick-tile__art collection-icon--liked"><Icon aria-hidden="true" fill="currentColor" /></span>
-      : <Artwork src={cover} title={label} className="quick-tile__art" />}
+    <Artwork src={cover} title={label} variant={variant} palette={palette} className="quick-tile__art" />
     <span className="quick-tile__label">{label}</span>
-    <span className="play-fab play-fab--sm" aria-hidden="true">{active && buffering ? <Loader2 className="spin" /> : active && playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</span>
+    {active && <span className="quick-tile__state" aria-hidden="true">{buffering ? <Loader2 className="spin" /> : playing ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}</span>}
   </button>;
 }
 
-export default function HomeView({ navigate }) {
+function FeatureCard({ track, tracks }) {
+  const player = usePlayer();
+  const active = player.isCurrent(track);
+  return <section className="feature-card" aria-label="New on the wire">
+    <Artwork src={track.cover} title={track.title} className="feature-card__art" />
+    <div className="feature-card__text">
+      <span className="mono-label mono-label--accent">New on the wire</span>
+      <h2>{track.title}</h2>
+      <p>Song · {track.artist}</p>
+    </div>
+    <button type="button" className="round-btn round-btn--cream" onClick={() => player.playFrom(tracks, 0, 'Trending worldwide')}
+      aria-label={active && player.isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
+      {active && player.isBuffering ? <Loader2 className="spin" /> : active && player.isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
+    </button>
+  </section>;
+}
+
+export default function HomeView({ navigate, onShowWelcome }) {
   const { feed, status, refreshing, reload } = useHomeFeed();
   const player = usePlayer();
-  const { likes } = useLibrary();
+  const { likes, jobs } = useLibrary();
+  const [filter, setFilter] = useState('all');
+  const downloading = Object.values(jobs).some((j) => j.status !== 'completed');
 
-  const recent = feed?.sections.find((s) => s.id === 'recent')?.tracks || [];
-  const quickPicks = recent.slice(0, likes.length ? 5 : 6);
-  const shelves = feed?.sections.filter((s) => s.id !== 'recent' || recent.length > 6) || [];
+  const sections = feed?.sections || [];
+  const recent = sections.find((s) => s.id === 'recent')?.tracks || [];
+  const forYou = sections.find((s) => s.id === 'for-you')?.tracks || [];
+  const trending = sections.find((s) => s.id === 'trending')?.tracks || [];
+  const quickSource = recent.length ? { tracks: recent, label: 'Recently played' } : { tracks: forYou.length ? forYou : trending, label: forYou.length ? 'Tuned for you' : 'Trending worldwide' };
+  const quickPicks = quickSource.tracks.slice(0, likes.length ? 5 : 6);
+  const active = FILTERS.find((f) => f.id === filter);
+  const shelves = sections.filter((s) => (active.sections ? active.sections(s.id) : s.id !== 'recent' || recent.length > 6));
+  const firstShelfIndex = shelves.findIndex((s) => s.kind === 'tracks');
 
   return <div className="page page--home">
-    <div className="page-glow" aria-hidden="true" />
-    <header className="page-header">
-      <div>
-        <h1>{greeting()}</h1>
-        {feed?.top_artists?.length > 0 && <p className="muted">Tuned to {feed.top_artists.slice(0, 3).join(', ')} and more</p>}
+    <header className="home-top">
+      <Omega className="home-top__logo mobile-only" aria-hidden="true" strokeWidth={2.6} />
+      <h1>{greeting()}</h1>
+      <div className="home-top__actions">
+        <button type="button" className="icon-btn icon-btn--lg" onClick={() => navigate({ name: 'library', tab: 'downloaded' })}
+          aria-label={downloading ? 'Downloads in progress' : 'Downloads'}>
+          <Bell />{downloading && <span className="dot" aria-hidden="true" />}
+        </button>
+        <TrackMenu label="Account and settings" triggerClass="avatar" trigger={<span aria-hidden="true">Y</span>} items={[
+          { label: 'Refresh recommendations', icon: RefreshCw, onSelect: reload },
+          { label: 'Download settings', icon: Download, onSelect: () => navigate({ name: 'library', tab: 'downloaded' }) },
+          { label: 'Show welcome screen', icon: Sparkles, onSelect: onShowWelcome },
+        ]} />
       </div>
-      <button type="button" className="btn btn--ghost btn--sm" onClick={reload} disabled={refreshing} aria-label="Refresh recommendations">
-        <RefreshCw className={refreshing ? 'spin' : ''} aria-hidden="true" /><span className="desktop-only">Refresh</span>
-      </button>
     </header>
 
-    {(quickPicks.length > 0 || likes.length > 0) && <div className="quick-grid">
-      {likes.length > 0 && <QuickTile label="Liked Songs" icon={Heart} onPlay={() => player.playFrom(likes, 0, 'Liked Songs')}
+    <div className="chip-row" role="group" aria-label="Filter home">
+      {FILTERS.map((f) => <button key={f.id} type="button" className={`chip ${filter === f.id ? 'is-active' : ''}`}
+        aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}
+      {refreshing && status === 'ready' && <Loader2 className="spin chip-row__spinner" aria-label="Refreshing" />}
+    </div>
+
+    {filter === 'all' && (quickPicks.length > 0 || likes.length > 0) && <div className="quick-grid">
+      {likes.length > 0 && <QuickTile label="Liked Songs" variant="bands" onPlay={() => player.playFrom(likes, 0, 'Liked Songs')}
         active={player.source === 'Liked Songs' && likes.some((t) => player.isCurrent(t))} playing={player.isPlaying} buffering={player.isBuffering} />}
       {quickPicks.map((track, i) => <QuickTile key={track.id} label={track.title} cover={track.cover}
-        onPlay={() => player.playFrom(recent, i, 'Recently played')}
+        onPlay={() => player.playFrom(quickSource.tracks, i, quickSource.label)}
         active={player.isCurrent(track)} playing={player.isPlaying} buffering={player.isBuffering} />)}
     </div>}
 
@@ -88,24 +105,31 @@ export default function HomeView({ navigate }) {
       Make sure the OhmWave server is running and connected to the internet.
     </EmptyState>}
 
-    {status === 'ready' && feed.cold_start && <section className="welcome-card">
-      <Sparkles aria-hidden="true" />
-      <div>
-        <h2>Your mixes start here</h2>
-        <p>Play, like and skip songs. OhmWave learns your taste and builds personal mixes, and every pick tells you why it was chosen.</p>
-        <div className="chip-row">
-          {GENRES.slice(0, 6).map((g) => <button key={g.name} type="button" className="chip" onClick={() => navigate({ name: 'search', query: g.query, category: 'genre' })}>{g.name}</button>)}
-        </div>
+    {status === 'ready' && feed.cold_start && filter === 'all' && <section className="welcome-card">
+      <span className="mono-label mono-label--accent">Start your current</span>
+      <h2>Your mixes start here</h2>
+      <p>Play, like and skip. OhmWave learns your taste and tells you why each pick was chosen.</p>
+      <div className="chip-row">
+        {GENRES.slice(0, 6).map((g) => <button key={g.name} type="button" className="chip chip--outline" onClick={() => navigate({ name: 'search', query: g.query, category: 'genre' })}>{g.name}</button>)}
       </div>
     </section>}
 
-    {status === 'ready' && shelves.map((section) => section.kind === 'artists'
-      ? <Shelf key={section.id} title={section.title} subtitle={section.subtitle}>
-        {section.artists.map((artist) => <ArtistCard key={artist.name} artist={artist}
-          onOpen={(name) => navigate({ name: 'search', query: name, category: 'artist' })} />)}
-      </Shelf>
-      : <Shelf key={section.id} title={section.title} subtitle={section.subtitle}>
-        {section.tracks.map((track, i) => <TrackCard key={`${track.id}-${i}`} track={track} tracks={section.tracks} index={i} source={section.title} />)}
-      </Shelf>)}
+    {status === 'ready' && shelves.map((section, n) => <div key={section.id}>
+      {section.kind === 'artists'
+        ? <Shelf title={section.title} subtitle={section.subtitle}>
+          {section.artists.map((artist) => <ArtistCard key={artist.name} artist={artist}
+            onOpen={(name) => navigate({ name: 'search', query: name, category: 'artist' })} />)}
+        </Shelf>
+        : <Shelf title={displayTitle(section)} subtitle={section.id === 'for-you' ? null : section.subtitle}
+          onSeeAll={() => navigate({ name: 'collection', kind: 'section', id: section.id })}>
+          {section.tracks.map((track, i) => <TrackCard key={`${track.id}-${i}`} track={track} tracks={section.tracks} index={i}
+            source={displayTitle(section)} badge={badgeFor(section, i)} />)}
+        </Shelf>}
+      {filter === 'all' && n === firstShelfIndex && trending[0] && <FeatureCard track={trending[0]} tracks={trending} />}
+    </div>)}
+
+    {status === 'ready' && shelves.length === 0 && filter !== 'all' && <EmptyState icon={Sparkles} title="Nothing here yet">
+      Keep listening. This view fills in as OhmWave learns what you like.
+    </EmptyState>}
   </div>;
 }

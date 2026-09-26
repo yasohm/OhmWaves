@@ -5,7 +5,7 @@ import { MoreHorizontal } from 'lucide-react';
  * Overflow menu for a track. Keyboard: Enter/Space opens, arrows move, Escape closes and restores focus.
  * `items`: [{ label, icon, onSelect, tone }]
  */
-export default function TrackMenu({ items, label }) {
+export default function TrackMenu({ items, label, trigger, triggerClass = 'icon-btn' }) {
   const [open, setOpen] = useState(false);
   const [placeUp, setPlaceUp] = useState(false);
   const wrapRef = useRef(null);
@@ -32,9 +32,9 @@ export default function TrackMenu({ items, label }) {
   };
 
   return <div className="menu-wrap" ref={wrapRef}>
-    <button ref={buttonRef} type="button" className="icon-btn" aria-haspopup="menu" aria-expanded={open} aria-label={label}
+    <button ref={buttonRef} type="button" className={triggerClass} aria-haspopup="menu" aria-expanded={open} aria-label={label}
       onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}>
-      <MoreHorizontal />
+      {trigger || <MoreHorizontal />}
     </button>
     {open && <div ref={menuRef} className={`menu ${placeUp ? 'menu--up' : ''}`} role="menu" onKeyDown={onKeyDown}>
       {items.map(({ label: itemLabel, icon: Icon, onSelect, tone }) => <button key={itemLabel} type="button" role="menuitem"

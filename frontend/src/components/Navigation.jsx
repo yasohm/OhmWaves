@@ -1,6 +1,7 @@
-import { Download, Heart, Home, Library, Search } from 'lucide-react';
+import { Home, Library, Search } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 import Logo from './Logo';
+import Artwork from './Artwork';
 
 export const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: Home },
@@ -8,14 +9,14 @@ export const NAV_ITEMS = [
   { id: 'library', label: 'Your Library', shortLabel: 'Library', icon: Library },
 ];
 
-const isActive = (route, id) => route.name === id || (id === 'library' && route.name === 'library');
+const isActive = (route, id) => route.name === id || (id === 'library' && (route.name === 'collection' || route.name === 'album'));
 
 export function Sidebar({ route, navigate }) {
   const { likes, files, jobs } = useLibrary();
   const activeDownloads = Object.values(jobs).filter((j) => j.status !== 'completed').length;
   const collections = [
-    { tab: 'liked', label: 'Liked Songs', meta: `${likes.length} ${likes.length === 1 ? 'song' : 'songs'}`, icon: Heart, className: 'collection-icon--liked' },
-    { tab: 'downloads', label: 'Downloads', meta: activeDownloads ? `${activeDownloads} in progress…` : `${files.length} on this device`, icon: Download, className: 'collection-icon--downloads' },
+    { id: 'liked', label: 'Liked Songs', meta: `Playlist · ${likes.length} ${likes.length === 1 ? 'song' : 'songs'}`, variant: 'bands', route: { name: 'collection', kind: 'liked' } },
+    { id: 'downloaded', label: 'Downloaded', meta: activeDownloads ? `${activeDownloads} in progress…` : `${files.length} on this device`, variant: 'stripes', route: { name: 'library', tab: 'downloaded' } },
   ];
   return <aside className="sidebar" aria-label="Sidebar">
     <div className="panel sidebar__nav">
@@ -32,14 +33,14 @@ export function Sidebar({ route, navigate }) {
       </nav>
     </div>
     <div className="panel sidebar__library">
-      <h2 className="eyebrow">Collections</h2>
+      <h2 className="mono-label">Collections</h2>
       <ul>
-        {collections.map(({ tab, label, meta, icon: Icon, className }) => {
-          const active = route.name === 'library' && (route.tab || 'liked') === tab;
-          return <li key={tab}>
-            <button type="button" className={`collection-link ${active ? 'is-active' : ''}`} onClick={() => navigate({ name: 'library', tab })}
+        {collections.map(({ id, label, meta, variant, route: target }) => {
+          const active = id === 'liked' ? route.name === 'collection' && route.kind === 'liked' : route.name === 'library' && route.tab === 'downloaded';
+          return <li key={id}>
+            <button type="button" className={`collection-link ${active ? 'is-active' : ''}`} onClick={() => navigate(target)}
               aria-current={active ? 'page' : undefined}>
-              <span className={`collection-icon ${className}`}><Icon aria-hidden="true" fill={tab === 'liked' ? 'currentColor' : 'none'} /></span>
+              <Artwork title={label} variant={variant} className="collection-link__art" />
               <span className="collection-link__text"><strong>{label}</strong><small>{meta}</small></span>
             </button>
           </li>;

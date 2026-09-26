@@ -28,6 +28,7 @@ export function PlayerProvider({ children }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off'); // off | all | one
   const [source, setSource] = useState('');
+  const [sourceKind, setSourceKind] = useState('playlist'); // playlist | album | artist | search
   const [volume, setVolumeState] = useState(readVolume);
   const [progress, setProgress] = useState({ time: 0, duration: 0 });
 
@@ -114,7 +115,7 @@ export function PlayerProvider({ children }) {
   }, [getAudio, notify]);
 
   /** Play a list starting at `startIndex`. Tapping the current song toggles play/pause instead. */
-  const playFrom = useCallback((tracks, startIndex = 0, label = '') => {
+  const playFrom = useCallback((tracks, startIndex = 0, label = '', kind = 'playlist') => {
     const chosen = tracks[startIndex];
     if (!chosen) return;
     if (state.current.current?.id === chosen.id) { togglePlay(); return; }
@@ -130,9 +131,10 @@ export function PlayerProvider({ children }) {
     setQueue(list);
     setIndex(start);
     setSource(label);
+    setSourceKind(kind);
   }, [finalizeListen, togglePlay]);
 
-  const shufflePlay = useCallback((tracks, label = '') => {
+  const shufflePlay = useCallback((tracks, label = '', kind = 'playlist') => {
     if (!tracks.length) return;
     finalizeListen('switch');
     const list = tracks.map((t) => withQid(t));
@@ -141,6 +143,7 @@ export function PlayerProvider({ children }) {
     setQueue(shuffleArray(list));
     setIndex(0);
     setSource(label);
+    setSourceKind(kind);
   }, [finalizeListen]);
 
   /** Insert into the queue; with nothing playing, the track simply starts. */
@@ -315,10 +318,10 @@ export function PlayerProvider({ children }) {
   const isCurrent = useCallback((track) => !!current && !!track && current.id === track.id, [current]);
 
   const value = useMemo(() => ({
-    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, volume,
+    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume,
     playFrom, shufflePlay, togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo,
     toggleShuffle, cycleRepeat, setVolume, isCurrent,
-  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, volume, playFrom, shufflePlay,
+  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playFrom, shufflePlay,
     togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo, toggleShuffle, cycleRepeat, setVolume, isCurrent]);
 
   const progressValue = useMemo(() => ({ ...progress, seek }), [progress, seek]);

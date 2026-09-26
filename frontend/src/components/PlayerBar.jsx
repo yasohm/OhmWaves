@@ -2,7 +2,6 @@ import { Heart, ListMusic, Loader2, Maximize2, Pause, Play, Repeat, Repeat1, Shu
 import { usePlayer, useProgress } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
 import { formatTime } from '../lib/tracks';
-import useDominantColor from '../hooks/useDominantColor';
 import Artwork from './Artwork';
 import ProgressSlider from './ProgressSlider';
 
@@ -55,11 +54,10 @@ function VolumeControl() {
 export default function PlayerBar({ onExpand, onToggleQueue, queueOpen }) {
   const { current, source } = usePlayer();
   const { isLiked, toggleLike } = useLibrary();
-  const color = useDominantColor(current?.cover);
   if (!current) return null;
   const liked = isLiked(current);
 
-  return <section className="player-bar" aria-label="Player" style={{ '--dominant': color }}>
+  return <section className="player-bar" aria-label="Player">
     <div className="player-bar__track">
       <button type="button" className="player-bar__art" onClick={onExpand} aria-label="Open now playing">
         <Artwork src={current.cover} title={current.title} />
@@ -72,7 +70,7 @@ export default function PlayerBar({ onExpand, onToggleQueue, queueOpen }) {
         aria-pressed={liked} aria-label={liked ? 'Remove from Liked Songs' : 'Add to Liked Songs'}>
         <Heart fill={liked ? 'currentColor' : 'none'} />
       </button>
-      <PlayButton size="sm" className="mobile-only" />
+      <PlayButton size="sm" className="mobile-only play-btn--bare" />
     </div>
     <div className="player-bar__center desktop-only">
       <TransportControls size="sm" />

@@ -19,7 +19,7 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
 
 ## Highlights
 
-- Dark, Spotify/Deezer-style interface for desktop and mobile: personal Home shelves, full-screen player tinted by the artwork, queue, shuffle/repeat, lock-screen and media-key controls.
+- Dark interface for desktop and mobile with generative cover art: personal Home shelves, a full-screen player with a waveform scrubber, queue, shuffle/repeat, and lock-screen and media-key controls.
 - Instant streaming: tracks play straight away without downloading, and likely next tracks are prefetched.
 - Search tracks, artists, albums, and genres through YouTube Music, with a `yt-dlp` search fallback.
 - Download one or multiple tracks concurrently as MP3, M4A, FLAC, WAV, or Opus.
@@ -29,6 +29,23 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
 - Track asynchronous download jobs and progress in the UI.
 - Use the same backend from a React web client, Capacitor mobile app, or terminal.
 - Hybrid personal recommendations that learn from plays, skips and likes, explain every pick, and power endless autoplay.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/welcome.png" alt="Welcome screen with orange wave lines above the wordmark and sign-up buttons" width="200" /><br /><sub><b>Welcome</b></sub></td>
+    <td align="center"><img src="docs/screenshots/home.png" alt="Home screen with greeting, filter chips, quick-play tiles and the Tuned for you shelf" width="200" /><br /><sub><b>Home</b></sub></td>
+    <td align="center"><img src="docs/screenshots/search.png" alt="Search screen with a cream search field, recent searches and colourful Browse by current genre tiles" width="200" /><br /><sub><b>Search</b></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/library.png" alt="Your library screen with Playlists, Albums, Artists and Downloaded tabs and a recently played list" width="200" /><br /><sub><b>Library</b></sub></td>
+    <td align="center"><img src="docs/screenshots/now-playing.png" alt="Now Playing screen with large cover art, an orange waveform scrubber, playback controls and an Up next card" width="200" /><br /><sub><b>Now Playing</b></sub></td>
+    <td></td>
+  </tr>
+</table>
+
+These are the design mockups the interface is built from. The running app uses the same layout and styling, filled with your own music. It uses a warm near-black canvas, cream type, an orange accent (`#FF6A2B`), wide display headings, monospace labels, and generated stripe, ring and sunburst covers for items without artwork.
 
 ## Architecture
 
@@ -49,6 +66,7 @@ Interactive CLI ─────────┘       │
 ├── yt_music_scraper.py          # Search, download, conversion, and tagging
 ├── recommendation_service.py    # Hybrid recommender: taste profile, catalog candidates, ranking
 ├── tests/                       # Offline recommender tests (python -m unittest)
+├── docs/screenshots/            # UI designs shown in this README
 ├── requirements-recommendations.txt
 ├── frontend/                    # React, Vite, and Capacitor application
 ├── templates/                   # HTML fallback when the React app is not built

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Clock, Loader2, Pause, Play, Search, SearchX, X } from 'lucide-react';
+import { Loader2, Pause, Play, Search, SearchX, X } from 'lucide-react';
 import { api, warmTrack } from '../lib/api';
 import { bestThumbnail, normalizeTrack } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
@@ -8,6 +8,7 @@ import { AlbumCard, Shelf } from '../components/Shelf';
 import { ListSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import Artwork from '../components/Artwork';
+import { CornerRings } from '../components/PatternArt';
 import { GENRES } from './genres';
 
 const CATEGORIES = [
@@ -49,7 +50,7 @@ function shapeResults(data, category) {
 function TopResult({ track, tracks, source }) {
   const player = usePlayer();
   const active = player.isCurrent(track);
-  return <button type="button" className="top-result" onClick={() => player.playFrom(tracks, 0, source)}
+  return <button type="button" className="top-result" onClick={() => player.playFrom(tracks, 0, source, 'search')}
     aria-label={active && player.isPlaying ? `Pause ${track.title}` : `Play ${track.title} by ${track.artist}`}>
     <Artwork src={track.cover} title={track.title} className="top-result__art" />
     <strong>{track.title}</strong>
@@ -113,38 +114,42 @@ export default function SearchView({ state, setState, navigate, pending, clearPe
   const showIdle = status === 'idle' || (!results && status !== 'loading' && status !== 'error');
 
   return <div className="page page--search">
+    <h1 className="page-title">Search</h1>
     <div className="search-sticky">
       <form className="search-field" role="search" onSubmit={(e) => { e.preventDefault(); runSearch(query, category); }}>
         <Search aria-hidden="true" />
         <input ref={inputRef} type="search" value={query} enterKeyHint="search" autoComplete="off"
           onChange={(e) => setState((s) => ({ ...s, query: e.target.value }))}
-          placeholder="What do you want to listen to?" aria-label="Search songs, artists, albums and genres" />
+          placeholder="Artists, songs or albums" aria-label="Search songs, artists, albums and genres" />
         {status === 'loading' ? <Loader2 className="spin" aria-label="Searching" />
           : query && <button type="button" className="icon-btn icon-btn--sm" onClick={() => { setState((s) => ({ ...s, query: '' })); inputRef.current?.focus(); }} aria-label="Clear search"><X /></button>}
       </form>
-      <div className="chip-row" role="group" aria-label="Search category">
+      {(query || results) && <div className="chip-row" role="group" aria-label="Search category">
         {CATEGORIES.map((c) => <button key={c.id} type="button" className={`chip ${category === c.id ? 'is-active' : ''}`}
           aria-pressed={category === c.id} onClick={() => setCategory(c.id)}>{c.label}</button>)}
-      </div>
+      </div>}
     </div>
 
     {showIdle && <>
-      {recent.length > 0 && <section className="section">
-        <h2 className="section-title">Recent searches</h2>
-        <ul className="recent-list">
-          {recent.map((item) => <li key={`${item.query}-${item.category}`}>
-            <button type="button" className="recent-list__main" onClick={() => runSearch(item.query, item.category)}>
-              <Clock aria-hidden="true" /><span>{item.query}</span><small>{CATEGORIES.find((c) => c.id === item.category)?.label}</small>
-            </button>
-            <button type="button" className="icon-btn icon-btn--sm" onClick={() => removeRecent(item)} aria-label={`Remove ${item.query} from recent searches`}><X /></button>
+      {recent.length > 0 && <section className="recent" aria-labelledby="recent-label">
+        <h2 id="recent-label" className="mono-label">Recent</h2>
+        <ul className="recent-pills">
+          {recent.map((item) => <li key={`${item.query}-${item.category}`} className="recent-pill">
+            <button type="button" onClick={() => runSearch(item.query, item.category)}
+              aria-label={`Search ${item.query} (${CATEGORIES.find((c) => c.id === item.category)?.label})`}>{item.query}</button>
+            <button type="button" className="recent-pill__remove" onClick={() => removeRecent(item)} aria-label={`Remove ${item.query} from recent searches`}><X /></button>
           </li>)}
         </ul>
       </section>}
       <section className="section">
-        <h2 className="section-title">Browse all</h2>
+        <h2 className="section-title">Browse by current</h2>
         <div className="genre-grid">
-          {GENRES.map((g) => <button key={g.name} type="button" className="genre-tile" style={{ '--tile': g.color }}
-            onClick={() => runSearch(g.query, 'genre')}>{g.name}</button>)}
+          {GENRES.map((g) => <button key={g.name} type="button" className="genre-tile" style={{ '--tile': g.color, '--tile-text': g.text }}
+            onClick={() => runSearch(g.query, 'genre')}>
+            <span className="genre-tile__name">{g.name}</span>
+            <span className="genre-tile__tempo">{g.tempo}</span>
+            <CornerRings color={g.ink} />
+          </button>)}
         </div>
       </section>
     </>}
@@ -158,7 +163,7 @@ export default function SearchView({ state, setState, navigate, pending, clearPe
       {results.artist && <header className="artist-hero">
         <Artwork src={results.artist.cover} title={results.artist.name} rounded className="artist-hero__art" />
         <div>
-          <span className="eyebrow">Artist</span>
+          <span className="mono-label">Artist</span>
           <h1>{results.artist.name}</h1>
           {results.artist.subscribers && <p className="muted">{results.artist.subscribers} subscribers</p>}
         </div>
@@ -171,13 +176,13 @@ export default function SearchView({ state, setState, navigate, pending, clearPe
         </section>
         <section className="results__songs-preview desktop-only">
           <h2 className="section-title">Songs</h2>
-          <TrackList tracks={results.tracks.slice(0, 4)} source={source} showAlbum={false} numbered={false} />
+          <TrackList tracks={results.tracks.slice(0, 4)} source={source} sourceKind="search" showAlbum={false} numbered={false} />
         </section>
       </div>}
 
       {results.tracks.length > 0 && <section className="section">
         <h2 className="section-title">{results.artist ? 'Popular' : 'All songs'}</h2>
-        <TrackList tracks={results.tracks} source={results.artist ? results.artist.name : source} />
+        <TrackList tracks={results.tracks} source={results.artist ? results.artist.name : source} sourceKind={results.artist ? 'artist' : 'search'} />
       </section>}
 
       {results.albums?.length > 0 && (results.category === 'album'
