@@ -19,6 +19,8 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
 
 ## Highlights
 
+- Dark, Spotify/Deezer-style interface for desktop and mobile: personal Home shelves, full-screen player tinted by the artwork, queue, shuffle/repeat, lock-screen and media-key controls.
+- Instant streaming: tracks play straight away without downloading, and likely next tracks are prefetched.
 - Search tracks, artists, albums, and genres through YouTube Music, with a `yt-dlp` search fallback.
 - Download one or multiple tracks concurrently as MP3, M4A, FLAC, WAV, or Opus.
 - Select 320, 256, 192, or 128 kbps conversion quality where the source and codec support it.
@@ -26,7 +28,7 @@ OhmWave is a local-first music application. Search YouTube Music by track, artis
 - Store downloads in artist and album folders; browse, stream, save, and delete them from the library.
 - Track asynchronous download jobs and progress in the UI.
 - Use the same backend from a React web client, Capacitor mobile app, or terminal.
-- Record listening events and likes in SQLite, with optional ALS-based recommendations and a popular-track fallback.
+- Hybrid personal recommendations that learn from plays, skips and likes, explain every pick, and power endless autoplay.
 
 ## Architecture
 
@@ -45,7 +47,8 @@ Interactive CLI ─────────┘       │
 ├── app.py                       # Flask server and JSON API
 ├── cli.py                       # Interactive and scripted command-line client
 ├── yt_music_scraper.py          # Search, download, conversion, and tagging
-├── recommendation_service.py    # SQLite events plus optional implicit ALS model
+├── recommendation_service.py    # Hybrid recommender: taste profile, catalog candidates, ranking
+├── tests/                       # Offline recommender tests (python -m unittest)
 ├── requirements-recommendations.txt
 ├── frontend/                    # React, Vite, and Capacitor application
 ├── templates/                   # HTML fallback when the React app is not built
@@ -187,8 +190,15 @@ The Flask API is local and currently has no authentication. Request and response
 | `GET` | `/api/download_file/<path:filename>` | Download a library file as an attachment |
 | `POST` | `/api/delete_file` | Delete a library file using `relative_path` |
 | `POST` | `/api/events` | Record a listening event |
+| `GET` | `/api/listen/<video_id>` | Stream a track instantly (proxied, supports `Range` for seeking) |
+| `POST` | `/api/listen/<video_id>/warm` | Prefetch a track's stream in the background |
+| `GET` | `/api/artwork/<path:filename>` | Cover art embedded in a library file |
 | `POST` | `/api/likes` | Create or refresh a user's track like |
-| `POST` | `/api/recommendations/retrain` | Train the optional recommendation model |
+| `DELETE` | `/api/likes` | Remove a like (`user_id`, `track_id`) |
+| `GET` | `/api/likes/<user_id>` | List a user's liked tracks |
+| `GET` | `/api/home/<user_id>` | Personal Home shelves (recently played, Made for you, On repeat, trending) |
+| `POST` | `/api/recommendations/<user_id>/next` | Autoplay: tracks to follow `seed`, excluding `exclude` ids |
+| `POST` | `/api/recommendations/retrain` | Train the optional multi-listener ALS model |
 | `GET` | `/api/recommendations/<user_id>` | Return recommendations; accepts `?limit=1..50` |
 
 Example search request:
@@ -209,7 +219,16 @@ curl -X POST http://localhost:5000/api/download \
 
 ## Recommendations
 
-Listening events and likes are stored in SQLite. The service works without additional packages by returning popular unseen tracks. To enable ALS training, install the optional dependencies and then call the retrain endpoint:
+Listening events and likes are stored in SQLite. `recommendation_service.py` is a hybrid engine designed for a local, usually single-listener app:
+
+1. **Taste profile.** Each play becomes an implicit score: a full listen counts positively, a skip within 30 s counts negatively, and a like counts the most. Scores decay over time (a 30-day half-life for plays, 180 days for likes) and roll up into artist affinities.
+2. **Candidates.** Seeds are sampled from your strongest tracks (so mixes refresh every few hours) and expanded with YouTube Music radio and your top artists' popular songs. Songs suggested by several seeds rank higher. Catalog lookups are cached in SQLite for 12 hours.
+3. **Ranking.** Candidates are boosted by artist affinity. Songs you've already heard, or skipped twice recently, are removed. A diversity pass caps each artist at two songs per mix.
+4. **Explanations.** Every pick carries a reason, such as "Because you liked Toxicity" or "More from Linkin Park".
+
+With no history yet, Home shows global chart tracks. When the queue runs low, autoplay uses the same ranking seeded by the current song. The web client reports plays and skips automatically.
+
+With several listeners, implicit ALS can add collaborative candidates. Install the optional dependencies and call the retrain endpoint:
 
 ```bash
 pip install -r requirements-recommendations.txt
@@ -222,13 +241,16 @@ The service reads these optional environment variables:
 | --- | --- | --- |
 | `OHMWAVE_DB` | `ohmwave.db` | SQLite database path for events and likes |
 | `OHMWAVE_MODEL` | `models/als_latest.pkl` | Location of the serialized ALS model |
+| `OHMWAVE_HOST` / `OHMWAVE_PORT` | `0.0.0.0` / `5000` | Address the API listens on |
+| `FLASK_DEBUG` | `0` | Set to `1` to enable the Werkzeug debugger (never on a shared network) |
 | `VITE_API_URL` | empty (same origin) | Base URL embedded in the Vite client for API requests |
 
 `ohmwave.db`, generated downloads, frontend build output, and local environment files are ignored by Git.
 
 ## Local-use and security notes
 
-- The development server listens on `0.0.0.0:5000` with Flask debug mode enabled.
+- The development server listens on `0.0.0.0:5000` so the mobile app can connect. Debug mode is off by default because the Werkzeug debugger allows remote code execution; enable it with `FLASK_DEBUG=1` only on a trusted machine.
+- Library file endpoints reject paths that escape the `downloads/` folder.
 - The API uses permissive CORS to support the mobile client and has no authentication or authorization.
 - Download jobs are held in application memory, so they do not survive a server restart.
 - Do not expose this server directly to the public internet without adding authentication, restrictive CORS, production server configuration, and a review of file-serving endpoints.

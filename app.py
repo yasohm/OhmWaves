@@ -145,14 +145,27 @@ def warm_stream(video_id):
     """Resolve the next track's stream in the background so skipping is instant."""
     if not VIDEO_ID_RE.match(video_id):
         return api_error("Invalid track id")
-    threading.Thread(target=lambda: _safe_resolve(video_id), daemon=True).start()
+    with _warm_lock:
+        if video_id in _warming or len(_warming) >= 12:
+            return jsonify({"success": True}), 202
+        _warming.add(video_id)
+    threading.Thread(target=_safe_resolve, args=(video_id,), daemon=True).start()
     return jsonify({"success": True}), 202
+
+# Prefetching is speculative (hover, next in queue), so dedupe it and cap parallel yt-dlp runs.
+_warming = set()
+_warm_lock = threading.Lock()
+_warm_slots = threading.Semaphore(3)
 
 def _safe_resolve(video_id):
     try:
-        scraper.resolve_stream(video_id)
+        with _warm_slots:
+            scraper.resolve_stream(video_id)
     except Exception as exc:
         app.logger.info("Prefetch failed for %s: %s", video_id, exc)
+    finally:
+        with _warm_lock:
+            _warming.discard(video_id)
 
 @app.route("/")
 def index():

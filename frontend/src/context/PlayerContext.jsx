@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { api, apiUrl, encodePath, sendQuietly, USER_ID } from '../lib/api';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { api, apiUrl, encodePath, sendQuietly, USER_ID, warmTrack } from '../lib/api';
 import { durationToSeconds, normalizeTrack, shuffleArray } from '../lib/tracks';
 import { useLibrary } from './LibraryContext';
 import { useToast } from './ToastContext';
@@ -18,7 +18,9 @@ const isTypingTarget = (el) => el && (el.isContentEditable || ['INPUT', 'TEXTARE
 export function PlayerProvider({ children }) {
   const { findLocal } = useLibrary();
   const { notify } = useToast();
-  const [audio] = useState(() => new Audio());
+  const audioRef = useRef(null);
+  /** One <audio> element for the app's lifetime, created on first use. */
+  const getAudio = useCallback(() => { if (!audioRef.current) audioRef.current = new Audio(); return audioRef.current; }, []);
   const [queue, setQueue] = useState([]);
   const [index, setIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -31,7 +33,8 @@ export function PlayerProvider({ children }) {
 
   const current = queue[index] || null;
   const state = useRef({});
-  state.current = { queue, index, repeat, shuffle, current, findLocal };
+  // Latest state for event handlers and async callbacks, without re-subscribing listeners.
+  useLayoutEffect(() => { state.current = { queue, index, repeat, shuffle, current, findLocal }; });
   const listen = useRef({ track: null, ms: 0, last: null, started: false });
   const fetchingMore = useRef(false);
   const errorStreak = useRef(0);
@@ -43,26 +46,26 @@ export function PlayerProvider({ children }) {
     const { track, ms, started } = listen.current;
     listen.current = { track: null, ms: 0, last: null, started: false };
     if (!track || !started || (ms < 1000 && reason !== 'skip')) return;
-    const durationMs = Math.round((audio.duration || durationToSeconds(track.duration)) * 1000) || 0;
+    const durationMs = Math.round((getAudio().duration || durationToSeconds(track.duration)) * 1000) || 0;
     const completed = reason === 'ended';
     sendQuietly('/api/events', {
       user_id: USER_ID, track_id: track.id, title: track.title, artist: track.artist,
       album: track.album || '', cover: track.cover, ms_played: Math.round(ms), duration_ms: durationMs,
       completed, skipped: reason === 'skip' && !completed,
     });
-  }, [audio]);
+  }, [getAudio]);
 
   // --------------------------------------------------------------- navigation
   const goTo = useCallback((nextIndex, reason) => {
     finalizeListen(reason);
     if (nextIndex === state.current.index) {
       listen.current = { track: state.current.current, ms: 0, last: null, started: true };
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
+      getAudio().currentTime = 0;
+      getAudio().play().catch(() => {});
       return;
     }
     setIndex(nextIndex);
-  }, [audio, finalizeListen]);
+  }, [getAudio, finalizeListen]);
 
   /** Autoplay: ask the recommender what should follow the current track. */
   const fetchMore = useCallback(async () => {
@@ -94,21 +97,21 @@ export function PlayerProvider({ children }) {
     finalizeListen(reason);
     const added = await fetchMore();
     if (added) setIndex(state.current.index + 1);
-    else { audio.pause(); if (!userInitiated) audio.currentTime = 0; }
+    else { getAudio().pause(); if (!userInitiated) getAudio().currentTime = 0; }
     return undefined;
-  }, [audio, fetchMore, finalizeListen, goTo]);
+  }, [getAudio, fetchMore, finalizeListen, goTo]);
 
   const previous = useCallback(() => {
     const { index: i } = state.current;
-    if (audio.currentTime > 3 || i <= 0) { audio.currentTime = 0; return; }
+    if (getAudio().currentTime > 3 || i <= 0) { getAudio().currentTime = 0; return; }
     goTo(i - 1, 'switch');
-  }, [audio, goTo]);
+  }, [getAudio, goTo]);
 
   const togglePlay = useCallback(() => {
     if (!state.current.current) return;
-    if (audio.paused) audio.play().catch(() => notify('Playback was blocked. Tap play again.', { tone: 'error' }));
-    else audio.pause();
-  }, [audio, notify]);
+    if (getAudio().paused) getAudio().play().catch(() => notify('Playback was blocked. Tap play again.', { tone: 'error' }));
+    else getAudio().pause();
+  }, [getAudio, notify]);
 
   /** Play a list starting at `startIndex`. Tapping the current song toggles play/pause instead. */
   const playFrom = useCallback((tracks, startIndex = 0, label = '') => {
@@ -193,23 +196,24 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback((seconds) => {
     if (!Number.isFinite(seconds)) return;
-    audio.currentTime = seconds;
+    getAudio().currentTime = seconds;
     listen.current.last = null;
     setProgress((p) => ({ ...p, time: seconds }));
-  }, [audio]);
+  }, [getAudio]);
 
   const setVolume = useCallback((value) => {
     const v = Math.max(0, Math.min(1, value));
-    audio.volume = v;
+    getAudio().volume = v;
     setVolumeState(v);
     try { localStorage.setItem(VOLUME_KEY, String(v)); } catch { /* preference only */ }
-  }, [audio]);
+  }, [getAudio]);
 
   // ------------------------------------------------------------ audio engine
   const nextRef = useRef(next);
-  nextRef.current = next;
+  useLayoutEffect(() => { nextRef.current = next; });
 
   useEffect(() => {
+    const audio = getAudio();
     audio.preload = 'auto';
     audio.volume = readVolume();
     const on = {
@@ -248,11 +252,12 @@ export function PlayerProvider({ children }) {
       Object.entries(on).forEach(([event, handler]) => audio.removeEventListener(event, handler));
       window.removeEventListener('pagehide', flush);
     };
-  }, [audio, finalizeListen, goTo, notify]);
+  }, [getAudio, finalizeListen, goTo, notify]);
 
   // Load a new track whenever the queue position changes.
   const currentQid = current?.qid;
   useEffect(() => {
+    const audio = getAudio();
     const track = state.current.current;
     if (!track) { audio.pause(); audio.removeAttribute('src'); return; }
     const local = track.relative_path ? track : state.current.findLocal(track);
@@ -267,14 +272,14 @@ export function PlayerProvider({ children }) {
     audio.play().catch((error) => {
       if (error.name === 'NotAllowedError') { setBuffering(false); setIsPlaying(false); }
     });
-  }, [audio, currentQid, notify]);
+  }, [getAudio, currentQid, notify]);
 
   // Keep autoplay one step ahead and pre-resolve the next stream so skips feel instant.
   useEffect(() => {
     if (index < 0) return;
     if (queue.length - index - 1 <= 1 && repeat === 'off') fetchMore();
     const upcoming = queue[index + 1];
-    if (upcoming?.videoId && !findLocal(upcoming)) sendQuietly(`/api/listen/${upcoming.videoId}/warm`);
+    if (upcoming && !findLocal(upcoming)) warmTrack(upcoming);
   }, [index, queue, repeat, fetchMore, findLocal]);
 
   // Lock screen, headset buttons and hardware media keys.
@@ -285,12 +290,12 @@ export function PlayerProvider({ children }) {
       artwork: current.cover ? [{ src: current.cover, sizes: '512x512' }] : [],
     });
     const handlers = {
-      play: () => audio.play(), pause: () => audio.pause(),
+      play: () => getAudio().play(), pause: () => getAudio().pause(),
       previoustrack: () => previous(), nexttrack: () => next(true),
       seekto: (details) => seek(details.seekTime),
     };
     Object.entries(handlers).forEach(([action, handler]) => { try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* unsupported */ } });
-  }, [audio, current, next, previous, seek]);
+  }, [getAudio, current, next, previous, seek]);
 
   useEffect(() => {
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';

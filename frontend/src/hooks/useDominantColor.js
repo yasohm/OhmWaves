@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const cache = new Map();
-export const FALLBACK_COLOR = '14, 47, 48'; // OhmWave brand teal
+export const FALLBACK_COLOR = '14 47 48'; // space-separated for rgb(var(--x) / alpha) // OhmWave brand teal
 
 /** Average artwork colour, lifted towards a vivid mid-tone so gradients read well on dark UI. */
 function extract(url) {
@@ -28,7 +28,7 @@ function extract(url) {
         const avg = [r, g, b].map((v) => v / weight);
         const peak = Math.max(...avg, 1);
         const scale = Math.min(1.6, 170 / peak);
-        resolve(avg.map((v) => Math.round(Math.min(255, v * scale))).join(', '));
+        resolve(avg.map((v) => Math.round(Math.min(255, v * scale))).join(' '));
       } catch {
         resolve(FALLBACK_COLOR); // tainted canvas (no CORS) or decode failure
       }
@@ -41,12 +41,12 @@ function extract(url) {
 }
 
 export default function useDominantColor(url) {
-  const [color, setColor] = useState(FALLBACK_COLOR);
+  const [result, setResult] = useState({ url: null, color: FALLBACK_COLOR });
   useEffect(() => {
+    if (!url) return undefined;
     let active = true;
-    if (!url) { setColor(FALLBACK_COLOR); return undefined; }
-    extract(url).then((value) => { if (active) setColor(value); });
+    extract(url).then((color) => { if (active) setResult({ url, color }); });
     return () => { active = false; };
   }, [url]);
-  return color;
+  return url && result.url === url ? result.color : FALLBACK_COLOR;
 }

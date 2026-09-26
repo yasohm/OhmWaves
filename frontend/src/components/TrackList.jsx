@@ -1,5 +1,6 @@
 import { Download, Heart, ListEnd, ListPlus, Loader2, Pause, Play, Sparkles, Trash2 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { warmTrack } from '../lib/api';
 import { useLibrary } from '../context/LibraryContext';
 import Artwork from './Artwork';
 import Equalizer from './Equalizer';
@@ -8,7 +9,7 @@ import TrackMenu from './TrackMenu';
 function TrackRow({ track, position, isCurrent, isPlaying, isBuffering, liked, showAlbum, showReason, onPlay, onLike, menuItems }) {
   const state = isCurrent ? (isPlaying ? 'playing' : 'paused') : 'idle';
   return <li className={`track-row ${isCurrent ? 'is-current' : ''}`}>
-    <button type="button" className="track-row__main" onClick={onPlay}
+    <button type="button" className="track-row__main" onClick={onPlay} onPointerEnter={() => warmTrack(track)} onFocus={() => warmTrack(track)}
       aria-label={isCurrent && isPlaying ? `Pause ${track.title}` : `Play ${track.title} by ${track.artist}`}>
       <span className="track-row__index" aria-hidden="true">
         {isCurrent && isBuffering ? <Loader2 className="spin" />

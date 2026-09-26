@@ -497,14 +497,17 @@ class RecommendationService:
                 sections.append({"id": "on-repeat", "title": "On repeat",
                                  "subtitle": "The songs you keep coming back to",
                                  "kind": "tracks", "tracks": on_repeat})
+            shown = {t["id"] for t in mix[:12]}  # what's visible in "Made for you" without scrolling
             for track_id, _ in profile.top_tracks(limit=2, playable_only=True):
                 meta = profile.metadata.get(track_id, {})
                 related = self._related(track_id)
                 candidates = {}
                 for rank, track in enumerate(related):
                     self._add_candidate(candidates, track, 1.0 / (1 + 0.05 * rank), f"Similar to {meta.get('title')}")
-                tracks = self._format(self._diversify(self._score(candidates, profile, exclude=set()), 16))
-                if tracks:
+                ranked = self._score(candidates, profile, exclude=shown)
+                tracks = self._format(self._diversify(ranked, 16))
+                shown |= {t["id"] for t in tracks}
+                if len(tracks) >= 4:
                     sections.append({"id": f"because-{track_id}", "title": f"Because you like {meta.get('title')}",
                                      "subtitle": meta.get("artist", ""), "kind": "tracks", "tracks": tracks})
             artists = [{"name": profile.display_artist(key), "cover": next(

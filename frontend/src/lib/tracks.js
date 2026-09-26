@@ -1,6 +1,14 @@
 import { apiUrl, encodePath } from './api';
 
-const pickCover = (item) => item.cover || item.thumbnails?.at?.(-1)?.url || item.thumbnail?.at?.(-1)?.url || null;
+/** Google-hosted thumbnails accept a size suffix, so request a crisp version for large artwork. */
+export function upscale(url, size = 544) {
+  if (!url || !url.includes('googleusercontent.com')) return url || null;
+  return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`).replace(/=s\d+$/, `=s${size}`);
+}
+
+export const bestThumbnail = (thumbnails) => upscale(thumbnails?.at?.(-1)?.url);
+
+const pickCover = (item) => item.cover || bestThumbnail(item.thumbnails) || bestThumbnail(item.thumbnail) || null;
 
 /** Normalise any track-shaped payload from the API into one client shape. */
 export function normalizeTrack(item, fallback = {}) {

@@ -33,6 +33,15 @@ export const api = {
   delete: (path, body, options) => request(path, { ...options, method: 'DELETE', body }),
 };
 
+const warmed = new Map();
+/** Pre-resolve a track's stream (on hover, focus or when likely next) so pressing play is near-instant. */
+export const warmTrack = (track) => {
+  const id = track?.videoId;
+  if (!id || track.relative_path || Date.now() - (warmed.get(id) || 0) < 30 * 60 * 1000) return;
+  warmed.set(id, Date.now());
+  sendQuietly(`/api/listen/${id}/warm`);
+};
+
 /** Fire-and-forget telemetry that must never break playback. */
 export const sendQuietly = (path, body) => {
   apiFetch(path, {

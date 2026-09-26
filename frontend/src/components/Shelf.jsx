@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, Pause, Play } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { warmTrack } from '../lib/api';
 import Artwork from './Artwork';
 import Equalizer from './Equalizer';
 
@@ -30,6 +31,7 @@ export function TrackCard({ track, tracks, index, source }) {
   const active = isCurrent && player.isPlaying;
   return <article className={`card ${isCurrent ? 'is-current' : ''}`}>
     <button type="button" className="card__hit" onClick={() => player.playFrom(tracks, index, source)}
+      onPointerEnter={() => warmTrack(track)} onFocus={() => warmTrack(track)} onTouchStart={() => warmTrack(track)}
       aria-label={active ? `Pause ${track.title}` : `Play ${track.title} by ${track.artist}`}>
       <span className="card__art">
         <Artwork src={track.cover} title={track.title} />

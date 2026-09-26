@@ -34,6 +34,7 @@ class YTMusicScraper:
         self.bin_dir = BIN_DIR if os.path.exists(BIN_DIR) else None
         self._stream_cache = {}
         self._stream_lock = threading.Lock()
+        self._stream_resolving = {}
 
     def search_artist(self, artist_name, limit=10):
         """Search for an artist and get top songs and albums."""
@@ -313,6 +314,17 @@ class YTMusicScraper:
 
     def resolve_stream(self, video_id, force=False):
         """Resolve (and cache) a direct audio URL so tracks play without downloading."""
+        with self._stream_lock:
+            track_lock = self._stream_resolving.setdefault(video_id, threading.Lock())
+        # A play request that arrives mid-prefetch waits for that result instead of re-running yt-dlp.
+        with track_lock:
+            try:
+                return self._resolve_stream_locked(video_id, force)
+            finally:
+                with self._stream_lock:
+                    self._stream_resolving.pop(video_id, None)
+
+    def _resolve_stream_locked(self, video_id, force):
         now = time.time()
         with self._stream_lock:
             cached = self._stream_cache.get(video_id)
