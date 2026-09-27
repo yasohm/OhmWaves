@@ -9,5 +9,6 @@
   },
   "android": {
     "backgroundColor": "#0f0f0e"
-  }
+  },
+  "appendUserAgent": "OhmWavesApp"
 }

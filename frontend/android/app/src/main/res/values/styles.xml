@@ -17,8 +17,10 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
-        <!-- Android 12+ shows the launcher icon here; keep the backdrop on-brand instead of the default light/dark. -->
+        <!-- The OhmWaves mark draws itself in here while the app starts (see MainActivity); index.html adds the waves. -->
         <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="windowSplashScreenAnimationDuration">800</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

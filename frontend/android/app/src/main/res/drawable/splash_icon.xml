@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch-screen logo, already drawn (Android 11 and older can't animate it). Must match .launch__mark in index.html. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp" android:height="288dp" android:viewportWidth="288" android:viewportHeight="288">
+    <group android:scaleX="0.19890" android:scaleY="0.19890" android:translateX="42.166" android:translateY="40.773">
+        <path android:name="body" android:pathData="M427,707V667A211,211 0,1 1,597 667V707" android:strokeColor="#FF6A2B" android:strokeWidth="60"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathEnd="1" />
+        <path android:name="left" android:pathData="M180,693C206,638 224,614 242,614C266,614 284,648 302,695C322,745 344,776 372,776C394,776 412,746 427,707" android:strokeColor="#FF6A2B" android:strokeWidth="60"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathStart="0" />
+        <path android:name="right" android:pathData="M844,693C818,638 800,614 782,614C758,614 740,648 722,695C702,745 680,776 652,776C630,776 612,746 597,707" android:strokeColor="#FF6A2B" android:strokeWidth="60"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:trimPathStart="0" />
+    </group>
+</vector>

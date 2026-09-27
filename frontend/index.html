@@ -13,12 +13,116 @@
   <meta name="description" content="OhmWaves: search, stream, download and discover music with personal recommendations." />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,600;125,700;125,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-    rel="stylesheet">
+  <!-- Non-blocking so nothing (including the launch screen) waits on the network to paint. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,600;125,700;125,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,600;125,700;125,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"></noscript>
+  <!--
+    Launch screen for the phone app (Capacitor adds "OhmWavesApp" to its user agent). Android's own splash draws
+    the OhmWaves mark while the app starts (drawable-v31/splash_icon.xml, MainActivity); this page paints the same
+    mark underneath, reports in (Launch.ready), and when Android hands over (ohmLaunchReveal) the waves flow in
+    along the bottom. It fades out once the app has rendered. Add ?launch to preview it in a browser.
+    The waves only move with transform/opacity, so the GPU keeps them smooth while the app starts.
+  -->
+  <style>
+    .launch { display: none; }
+    .is-app .launch { position: fixed; inset: 0; z-index: 1000; display: block; overflow: hidden; background: #0f0f0e; transition: opacity 280ms ease-out; will-change: opacity; }
+    .launch.is-leaving { opacity: 0; }
+    /* Same size and spot as Android's splash logo (144dp wide, centred); MainActivity sends the exact centre. */
+    .launch__mark { position: absolute; left: var(--launch-x, 50%); top: var(--launch-y, 50%); width: 144px; color: #ff6a2b; transform: translate(-50%, -50%); }
+    .launch__layer { position: absolute; bottom: 0; left: 0; width: 200%; height: 42%; opacity: 0; will-change: transform, opacity; }
+    .launch.is-revealed .launch__layer { animation: launch-rise 700ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards, launch-flow var(--speed) linear infinite; }
+    .launch__layer svg { display: block; width: 100%; height: 100%; }
+    .launch__layer path { fill: none; vector-effect: non-scaling-stroke; }
+    .launch__layer--back { --speed: 16s; }
+    .launch.is-revealed .launch__layer--mid { --speed: 11s; animation-delay: 60ms, 0s; }
+    .launch.is-revealed .launch__layer--front { --speed: 7s; animation-delay: 120ms, 0s; }
+    @keyframes launch-rise { from { opacity: 0; translate: 0 24px; } to { opacity: 1; translate: 0 0; } }
+    @keyframes launch-flow { to { transform: translateX(-50%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .launch.is-revealed .launch__layer { animation: none; opacity: 1; }
+    }
+  </style>
+  <script>
+    (function () {
+      var native = /OhmWavesApp/.test(navigator.userAgent);
+      window.ohmLaunchReady = Promise.resolve();
+      if (!native && !/[?&]launch\b/.test(location.search)) return;
+      document.documentElement.classList.add('is-app');
+      var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var minShow = still ? 300 : 1000; // time the waves get on screen after Android hands over
+      var revealedAt = null, wanted = false, leaving = false, startApp;
+      // The app boots once Android hands over, so it never competes with the handover itself.
+      window.ohmLaunchReady = new Promise(function (resolve) { startApp = resolve; });
+
+      function leave() {
+        var el = document.getElementById('launch');
+        if (!el) return;
+        el.classList.add('is-leaving');
+        setTimeout(function () { el.remove(); }, 320);
+      }
+      function maybeLeave() {
+        if (leaving || !wanted || revealedAt === null) return;
+        leaving = true;
+        setTimeout(leave, Math.max(0, revealedAt + minShow - performance.now()));
+      }
+      /** Called by MainActivity as its splash fades: (x, y) is the splash logo's centre in CSS pixels. */
+      window.ohmLaunchReveal = function (x, y) {
+        if (revealedAt !== null) return;
+        var el = document.getElementById('launch');
+        if (!el && document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function () { window.ohmLaunchReveal(x, y); });
+          return;
+        }
+        if (el && x != null) { el.style.setProperty('--launch-x', x + 'px'); el.style.setProperty('--launch-y', y + 'px'); }
+        if (el) el.classList.add('is-revealed');
+        revealedAt = performance.now();
+        startApp();
+        maybeLeave();
+      };
+      /** Called by main.jsx once the app has rendered. */
+      window.ohmLaunchDone = function () { wanted = true; maybeLeave(); };
+      // In the app this only matters if Android's handover never arrives (browser preview reveals in <body>).
+      if (native) setTimeout(window.ohmLaunchReveal, 4000);
+      setTimeout(leave, 9000); // never trap the user if the app fails to start
+    })();
+  </script>
 </head>
 
 <body>
+  <div id="launch" class="launch" aria-hidden="true">
+    <div class="launch__layer launch__layer--back"><svg viewBox="0 0 800 260" preserveAspectRatio="none">
+      <path d="M0,192.0 L8,193.7 L16,195.8 L24,198.1 L32,200.7 L40,203.6 L48,206.6 L56,209.7 L64,213.0 L72,216.2 L80,219.5 L88,222.7 L96,225.7 L104,228.6 L112,231.3 L120,233.7 L128,235.8 L136,237.6 L144,239.0 L152,240.1 L160,240.7 L168,241.0 L176,240.8 L184,240.3 L192,239.3 L200,238.0 L208,236.3 L216,234.2 L224,231.9 L232,229.3 L240,226.4 L248,223.4 L256,220.3 L264,217.0 L272,213.8 L280,210.5 L288,207.3 L296,204.3 L304,201.4 L312,198.7 L320,196.3 L328,194.2 L336,192.4 L344,191.0 L352,189.9 L360,189.3 L368,189.0 L376,189.2 L384,189.7 L392,190.7 L400,192.0 L408,193.7 L416,195.8 L424,198.1 L432,200.7 L440,203.6 L448,206.6 L456,209.7 L464,213.0 L472,216.2 L480,219.5 L488,222.7 L496,225.7 L504,228.6 L512,231.3 L520,233.7 L528,235.8 L536,237.6 L544,239.0 L552,240.1 L560,240.7 L568,241.0 L576,240.8 L584,240.3 L592,239.3 L600,238.0 L608,236.3 L616,234.2 L624,231.9 L632,229.3 L640,226.4 L648,223.4 L656,220.3 L664,217.0 L672,213.8 L680,210.5 L688,207.3 L696,204.3 L704,201.4 L712,198.7 L720,196.3 L728,194.2 L736,192.4 L744,191.0 L752,189.9 L760,189.3 L768,189.0 L776,189.2 L784,189.7 L792,190.7 L800,192.0" stroke="#3a3936" stroke-opacity="0.5" stroke-width="1.68" />
+      <path d="M0,166.7 L8,166.0 L16,167.3 L24,170.6 L32,175.5 L40,181.9 L48,189.3 L56,197.2 L64,205.2 L72,212.7 L80,219.3 L88,224.6 L96,228.2 L104,229.9 L112,229.6 L120,227.3 L128,223.1 L136,217.4 L144,210.5 L152,202.8 L160,194.7 L168,186.9 L176,179.8 L184,173.8 L192,169.4 L200,166.7 L208,166.0 L216,167.3 L224,170.6 L232,175.5 L240,181.9 L248,189.3 L256,197.2 L264,205.2 L272,212.7 L280,219.3 L288,224.6 L296,228.2 L304,229.9 L312,229.6 L320,227.3 L328,223.1 L336,217.4 L344,210.5 L352,202.8 L360,194.7 L368,186.9 L376,179.8 L384,173.8 L392,169.4 L400,166.7 L408,166.0 L416,167.3 L424,170.6 L432,175.5 L440,181.9 L448,189.3 L456,197.2 L464,205.2 L472,212.7 L480,219.3 L488,224.6 L496,228.2 L504,229.9 L512,229.6 L520,227.3 L528,223.1 L536,217.4 L544,210.5 L552,202.8 L560,194.7 L568,186.9 L576,179.8 L584,173.8 L592,169.4 L600,166.7 L608,166.0 L616,167.3 L624,170.6 L632,175.5 L640,181.9 L648,189.3 L656,197.2 L664,205.2 L672,212.7 L680,219.3 L688,224.6 L696,228.2 L704,229.9 L712,229.6 L720,227.3 L728,223.1 L736,217.4 L744,210.5 L752,202.8 L760,194.7 L768,186.9 L776,179.8 L784,173.8 L792,169.4 L800,166.7" stroke="#4a4945" stroke-opacity="0.5" stroke-width="2.0999999999999996" />
+      <path d="M0,155.5 L8,151.8 L16,148.4 L24,145.6 L32,143.3 L40,141.6 L48,140.5 L56,140.0 L64,140.2 L72,141.0 L80,142.3 L88,144.3 L96,146.9 L104,150.0 L112,153.5 L120,157.5 L128,161.8 L136,166.4 L144,171.2 L152,176.2 L160,181.2 L168,186.2 L176,191.1 L184,195.8 L192,200.3 L200,204.5 L208,208.2 L216,211.6 L224,214.4 L232,216.7 L240,218.4 L248,219.5 L256,220.0 L264,219.8 L272,219.0 L280,217.7 L288,215.7 L296,213.1 L304,210.0 L312,206.5 L320,202.5 L328,198.2 L336,193.6 L344,188.8 L352,183.8 L360,178.8 L368,173.8 L376,168.9 L384,164.2 L392,159.7 L400,155.5 L408,151.8 L416,148.4 L424,145.6 L432,143.3 L440,141.6 L448,140.5 L456,140.0 L464,140.2 L472,141.0 L480,142.3 L488,144.3 L496,146.9 L504,150.0 L512,153.5 L520,157.5 L528,161.8 L536,166.4 L544,171.2 L552,176.2 L560,181.2 L568,186.2 L576,191.1 L584,195.8 L592,200.3 L600,204.5 L608,208.2 L616,211.6 L624,214.4 L632,216.7 L640,218.4 L648,219.5 L656,220.0 L664,219.8 L672,219.0 L680,217.7 L688,215.7 L696,213.1 L704,210.0 L712,206.5 L720,202.5 L728,198.2 L736,193.6 L744,188.8 L752,183.8 L760,178.8 L768,173.8 L776,168.9 L784,164.2 L792,159.7 L800,155.5" stroke="#6b6963" stroke-opacity="0.45" stroke-width="2.0999999999999996" />
+    </svg></div>
+    <div class="launch__layer launch__layer--mid"><svg viewBox="0 0 800 260" preserveAspectRatio="none">
+      <path d="M0,174.1 L8,164.6 L16,155.2 L24,146.4 L32,138.7 L40,132.7 L48,128.7 L56,127.1 L64,127.7 L72,130.8 L80,136.0 L88,143.0 L96,151.4 L104,160.6 L112,170.1 L120,179.3 L128,187.6 L136,194.5 L144,199.5 L152,202.4 L160,202.9 L168,201.0 L176,196.9 L184,190.7 L192,183.0 L200,174.1 L208,164.6 L216,155.2 L224,146.4 L232,138.7 L240,132.7 L248,128.7 L256,127.1 L264,127.7 L272,130.8 L280,136.0 L288,143.0 L296,151.4 L304,160.6 L312,170.1 L320,179.3 L328,187.6 L336,194.5 L344,199.5 L352,202.4 L360,202.9 L368,201.0 L376,196.9 L384,190.7 L392,183.0 L400,174.1 L408,164.6 L416,155.2 L424,146.4 L432,138.7 L440,132.7 L448,128.7 L456,127.1 L464,127.7 L472,130.8 L480,136.0 L488,143.0 L496,151.4 L504,160.6 L512,170.1 L520,179.3 L528,187.6 L536,194.5 L544,199.5 L552,202.4 L560,202.9 L568,201.0 L576,196.9 L584,190.7 L592,183.0 L600,174.1 L608,164.6 L616,155.2 L624,146.4 L632,138.7 L640,132.7 L648,128.7 L656,127.1 L664,127.7 L672,130.8 L680,136.0 L688,143.0 L696,151.4 L704,160.6 L712,170.1 L720,179.3 L728,187.6 L736,194.5 L744,199.5 L752,202.4 L760,202.9 L768,201.0 L776,196.9 L784,190.7 L792,183.0 L800,174.1" stroke="#8a8780" stroke-opacity="0.6" stroke-width="2.8" />
+      <path d="M0,182.4 L8,177.7 L16,172.6 L24,167.1 L32,161.4 L40,155.4 L48,149.4 L56,143.4 L64,137.5 L72,131.8 L80,126.4 L88,121.3 L96,116.7 L104,112.6 L112,109.2 L120,106.3 L128,104.2 L136,102.7 L144,102.1 L152,102.1 L160,103.0 L168,104.5 L176,106.8 L184,109.8 L192,113.4 L200,117.6 L208,122.3 L216,127.4 L224,132.9 L232,138.6 L240,144.6 L248,150.6 L256,156.6 L264,162.5 L272,168.2 L280,173.6 L288,178.7 L296,183.3 L304,187.4 L312,190.8 L320,193.7 L328,195.8 L336,197.3 L344,197.9 L352,197.9 L360,197.0 L368,195.5 L376,193.2 L384,190.2 L392,186.6 L400,182.4 L408,177.7 L416,172.6 L424,167.1 L432,161.4 L440,155.4 L448,149.4 L456,143.4 L464,137.5 L472,131.8 L480,126.4 L488,121.3 L496,116.7 L504,112.6 L512,109.2 L520,106.3 L528,104.2 L536,102.7 L544,102.1 L552,102.1 L560,103.0 L568,104.5 L576,106.8 L584,109.8 L592,113.4 L600,117.6 L608,122.3 L616,127.4 L624,132.9 L632,138.6 L640,144.6 L648,150.6 L656,156.6 L664,162.5 L672,168.2 L680,173.6 L688,178.7 L696,183.3 L704,187.4 L712,190.8 L720,193.7 L728,195.8 L736,197.3 L744,197.9 L752,197.9 L760,197.0 L768,195.5 L776,193.2 L784,190.2 L792,186.6 L800,182.4" stroke="#c4522a" stroke-opacity="0.5" stroke-width="2.8" />
+    </svg></div>
+    <div class="launch__layer launch__layer--front"><svg viewBox="0 0 800 260" preserveAspectRatio="none">
+      <path d="M0,178.4 L8,179.0 L16,178.9 L24,178.1 L32,176.6 L40,174.5 L48,171.7 L56,168.4 L64,164.5 L72,160.2 L80,155.5 L88,150.5 L96,145.2 L104,139.7 L112,134.2 L120,128.7 L128,123.3 L136,118.1 L144,113.1 L152,108.5 L160,104.3 L168,100.6 L176,97.4 L184,94.9 L192,92.9 L200,91.6 L208,91.0 L216,91.1 L224,91.9 L232,93.4 L240,95.5 L248,98.3 L256,101.6 L264,105.5 L272,109.8 L280,114.5 L288,119.5 L296,124.8 L304,130.3 L312,135.8 L320,141.3 L328,146.7 L336,151.9 L344,156.9 L352,161.5 L360,165.7 L368,169.4 L376,172.6 L384,175.1 L392,177.1 L400,178.4 L408,179.0 L416,178.9 L424,178.1 L432,176.6 L440,174.5 L448,171.7 L456,168.4 L464,164.5 L472,160.2 L480,155.5 L488,150.5 L496,145.2 L504,139.7 L512,134.2 L520,128.7 L528,123.3 L536,118.1 L544,113.1 L552,108.5 L560,104.3 L568,100.6 L576,97.4 L584,94.9 L592,92.9 L600,91.6 L608,91.0 L616,91.1 L624,91.9 L632,93.4 L640,95.5 L648,98.3 L656,101.6 L664,105.5 L672,109.8 L680,114.5 L688,119.5 L696,124.8 L704,130.3 L712,135.8 L720,141.3 L728,146.7 L736,151.9 L744,156.9 L752,161.5 L760,165.7 L768,169.4 L776,172.6 L784,175.1 L792,177.1 L800,178.4" stroke="#ff6a2b" stroke-opacity="0.55" stroke-width="3.5" />
+      <path d="M0,130.9 L8,137.6 L16,144.0 L24,150.0 L32,155.5 L40,160.5 L48,164.9 L56,168.5 L64,171.4 L72,173.4 L80,174.6 L88,175.0 L96,174.5 L104,173.1 L112,170.9 L120,167.9 L128,164.1 L136,159.7 L144,154.6 L152,148.9 L160,142.8 L168,136.4 L176,129.7 L184,122.8 L192,115.9 L200,109.1 L208,102.4 L216,96.0 L224,90.0 L232,84.5 L240,79.5 L248,75.1 L256,71.5 L264,68.6 L272,66.6 L280,65.4 L288,65.0 L296,65.5 L304,66.9 L312,69.1 L320,72.1 L328,75.9 L336,80.3 L344,85.4 L352,91.1 L360,97.2 L368,103.6 L376,110.3 L384,117.2 L392,124.1 L400,130.9 L408,137.6 L416,144.0 L424,150.0 L432,155.5 L440,160.5 L448,164.9 L456,168.5 L464,171.4 L472,173.4 L480,174.6 L488,175.0 L496,174.5 L504,173.1 L512,170.9 L520,167.9 L528,164.1 L536,159.7 L544,154.6 L552,148.9 L560,142.8 L568,136.4 L576,129.7 L584,122.8 L592,115.9 L600,109.1 L608,102.4 L616,96.0 L624,90.0 L632,84.5 L640,79.5 L648,75.1 L656,71.5 L664,68.6 L672,66.6 L680,65.4 L688,65.0 L696,65.5 L704,66.9 L712,69.1 L720,72.1 L728,75.9 L736,80.3 L744,85.4 L752,91.1 L760,97.2 L768,103.6 L776,110.3 L784,117.2 L792,124.1 L800,130.9" stroke="#ff6a2b" stroke-opacity="1" stroke-width="4.199999999999999" />
+    </svg></div>
+    <svg class="launch__mark" viewBox="150 157 724 724" fill="none" stroke="currentColor" stroke-width="60" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M427 707V667A211 211 0 1 1 597 667V707" />
+      <path d="M180 693C206 638 224 614 242 614C266 614 284 648 302 695C322 745 344 776 372 776C394 776 412 746 427 707" />
+      <path d="M844 693C818 638 800 614 782 614C758 614 740 648 722 695C702 745 680 776 652 776C630 776 612 746 597 707" />
+    </svg>
+  </div>
+  <script>
+    // Tell Android the launch screen is on screen (after it has actually painted) so its splash can hand over.
+    // The browser preview has no Android splash, so it starts the waves straight away.
+    (function () {
+      if (!/OhmWavesApp/.test(navigator.userAgent)) { if (window.ohmLaunchReveal) window.ohmLaunchReveal(); return; }
+      var tries = 0;
+      function report() {
+        var cap = window.Capacitor;
+        if (cap && cap.nativePromise) { cap.nativePromise('Launch', 'ready').catch(function () {}); return; }
+        if (++tries < 40) setTimeout(report, 50);
+      }
+      requestAnimationFrame(function () { requestAnimationFrame(report); });
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>
