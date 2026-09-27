@@ -29,7 +29,7 @@ export default function NowPlaying({ onClose, onOpenArtist }) {
 
   if (!current) return null;
   const liked = isLiked(current);
-  const canDownload = current.videoId && !findLocal(current);
+  const canDownload = current.videoId && !current.localUri && !findLocal(current);
   const upNext = queue[index + 1];
   const artistName = current.artist.split(',')[0].trim();
 

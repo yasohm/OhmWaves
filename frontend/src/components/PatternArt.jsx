@@ -1,6 +1,6 @@
 import { hueFor } from '../lib/tracks';
 
-// The OhmWave generative cover language: stripes, rings, bursts and bands in paired colours.
+// The OhmWaves generative cover language: stripes, rings, bursts and bands in paired colours.
 export const PALETTES = [
   ['#3d6bff', '#0f1a3d'], // electric blue
   ['#9aa13a', '#1f2410'], // olive

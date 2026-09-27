@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/ohmwaves-logo-on-dark.png" alt="OhmWave Logo" width="400" />
+  <img src="img/ohmwaves-logo-on-dark.png" alt="OhmWaves Logo" width="400" />
 </p>
 <p align="center">
   Local music search, downloads, playback, and recommendations powered by YouTube Music.
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/yt--dlp-Audio-FF0000?style=flat-square" alt="yt-dlp" />
 </p>
 
-OhmWave is a local-first music application. Search YouTube Music by track, artist, album, or genre; download selected results to a managed local library; and stream or manage the resulting files from the web interface. The repository also contains an interactive CLI and a Capacitor client for Android and iOS.
+OhmWaves is a local-first music application. Search YouTube Music by track, artist, album, or genre; download selected results to a managed local library; and stream or manage the resulting files from the web interface. The repository also contains an interactive CLI and a Capacitor client for Android and iOS.
 
 > **Responsible use:** You are responsible for complying with YouTube's terms, copyright law, and all applicable local regulations. This project is intended for local, personal use.
 

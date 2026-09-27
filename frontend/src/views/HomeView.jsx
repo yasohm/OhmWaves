@@ -56,7 +56,7 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
   const player = usePlayer();
   const { likes, jobs } = useLibrary();
   const [filter, setFilter] = useState('all');
-  const downloading = Object.values(jobs).some((j) => j.status !== 'completed');
+  const downloading = Object.values(jobs).some((j) => j.status !== (j.device ? 'saved' : 'completed'));
 
   const sections = feed?.sections || [];
   const recent = sections.find((s) => s.id === 'recent')?.tracks || [];
@@ -107,13 +107,13 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
         <button type="button" className="btn btn--primary" onClick={reload}>Try again</button>
         {onChangeServer && <button type="button" className="btn btn--outline" onClick={onChangeServer}>Change server</button>}
       </div>}>
-      Make sure the OhmWave server is running on your computer and connected to the internet.
+      Make sure the OhmWaves server is running on your computer and connected to the internet.
     </EmptyState>}
 
     {status === 'ready' && feed.cold_start && filter === 'all' && <section className="welcome-card">
       <span className="mono-label mono-label--accent">Start your current</span>
       <h2>Your mixes start here</h2>
-      <p>Play, like and skip. OhmWave learns your taste and tells you why each pick was chosen.</p>
+      <p>Play, like and skip. OhmWaves learns your taste and tells you why each pick was chosen.</p>
       <div className="chip-row">
         {GENRES.slice(0, 6).map((g) => <button key={g.name} type="button" className="chip chip--outline" onClick={() => navigate({ name: 'search', query: g.query, category: 'genre' })}>{g.name}</button>)}
       </div>
@@ -134,7 +134,7 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
     </div>)}
 
     {status === 'ready' && shelves.length === 0 && filter !== 'all' && <EmptyState icon={Sparkles} title="Nothing here yet">
-      Keep listening. This view fills in as OhmWave learns what you like.
+      Keep listening. This view fills in as OhmWaves learns what you like.
     </EmptyState>}
   </div>;
 }

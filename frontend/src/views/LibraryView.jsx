@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowDownToLine, LayoutGrid, List, ListFilter, Plus, Search, WifiOff, X, Library as LibraryIcon } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
+import { isNativeApp } from '../lib/api';
 import useHomeFeed from '../hooks/useHomeFeed';
 import Artwork from '../components/Artwork';
 import TrackList from '../components/TrackList';
@@ -48,7 +49,7 @@ export default function LibraryView({ tab = 'playlists', navigate }) {
       return [
         { key: 'liked', title: 'Liked Songs', subtitle: `Playlist · ${songs(liked.length)}`, variant: 'bands',
           downloaded: liked.length > 0 && liked.every((t) => downloadedIds.has(t.title.toLowerCase())), open: { name: 'collection', kind: 'liked' } },
-        ...mixes.map((s) => ({ key: s.id, title: sectionTitle(s), subtitle: s.id === 'recent' ? `Playlist · ${songs(s.tracks.length)}` : s.id === 'trending' ? 'Chart · Global' : 'Made for you · OhmWave',
+        ...mixes.map((s) => ({ key: s.id, title: sectionTitle(s), subtitle: s.id === 'recent' ? `Playlist · ${songs(s.tracks.length)}` : s.id === 'trending' ? 'Chart · Global' : 'Made for you · OhmWaves',
           open: { name: 'collection', kind: 'section', id: s.id } })),
       ];
     }
@@ -140,12 +141,14 @@ export default function LibraryView({ tab = 'playlists', navigate }) {
       </div>
       {library.filesState === 'loading' && <ListSkeleton />}
       {library.filesState === 'error' && <EmptyState icon={WifiOff} title="Couldn’t read your downloads"
-        action={<button type="button" className="btn btn--primary" onClick={library.refreshFiles}>Try again</button>}>The OhmWave server may be offline.</EmptyState>}
+        action={<button type="button" className="btn btn--primary" onClick={library.refreshFiles}>Try again</button>}>The OhmWaves server may be offline.</EmptyState>}
       {library.filesState === 'ready' && (downloadedTracks.length
         ? <TrackList tracks={downloadedTracks} source="Downloaded" onDelete={library.requestDelete} />
         : <EmptyState icon={ArrowDownToLine} title={filter ? `Nothing matches “${filter}”` : 'No downloads yet'}
           action={!filter && <button type="button" className="btn btn--primary" onClick={() => navigate({ name: 'search' })}>Find music</button>}>
-          {!filter && 'Download songs to listen offline. They’re saved with cover art and tags.'}
+          {!filter && (isNativeApp
+            ? 'Download songs to listen without a connection. They’re kept inside OhmWaves on this phone.'
+            : 'Download songs to listen offline. They’re saved with cover art and tags.')}
         </EmptyState>)}
     </> : visible.length
       ? <ul className={grid ? 'library-grid' : 'library-list'}>

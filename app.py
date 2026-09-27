@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import uuid
 import threading
@@ -43,6 +44,28 @@ def library_path(relative_path):
     return safe_join(scraper.download_dir, relative_path)
 
 download_jobs = {}
+
+# Phone downloads are converted here, pulled by the app into its private storage, then deleted.
+# The leading dot keeps them out of the library listing.
+DEVICE_DIR = ".device"
+DEVICE_TTL_SECONDS = 6 * 3600
+
+
+def device_job_dir(job_id):
+    return os.path.join(scraper.download_dir, DEVICE_DIR, job_id)
+
+
+def purge_stale_device_files():
+    """Remove phone downloads the app never collected (e.g. the phone went offline mid-transfer)."""
+    root = os.path.join(scraper.download_dir, DEVICE_DIR)
+    if not os.path.isdir(root):
+        return
+    cutoff = time.time() - DEVICE_TTL_SECONDS
+    for name in os.listdir(root):
+        path = os.path.join(root, name)
+        if os.path.isdir(path) and os.path.getmtime(path) < cutoff:
+            shutil.rmtree(path, ignore_errors=True)
+            download_jobs.pop(name, None)
 
 @app.route("/api/events", methods=["POST"])
 def record_listening_event():
@@ -217,13 +240,19 @@ def start_download():
     tracks = data.get("tracks", [])
     audio_format = data.get("format", "mp3")
     audio_quality = data.get("quality", "320")
+    target = data.get("target", "library")
 
     if not tracks:
         return jsonify({"error": "No tracks provided for download"}), 400
+    if target not in ("library", "device"):
+        return api_error("Download target must be 'library' or 'device'.")
+    if target == "device":
+        purge_stale_device_files()
 
     job_id = str(uuid.uuid4())
     download_jobs[job_id] = {
         "id": job_id,
+        "target": target,
         "status": "queued",
         "total": len(tracks),
         "current_index": 0,
@@ -260,7 +289,9 @@ def process_download_job(job_id, tracks, audio_format, audio_quality):
             job["current_track"] = f"{track_title} - {artist_name}"
 
         subfolder = ""
-        if artist_name and artist_name != "Unknown Artist":
+        if job["target"] == "device":
+            subfolder = os.path.join(DEVICE_DIR, job_id)
+        elif artist_name and artist_name != "Unknown Artist":
             subfolder = scraper.sanitize_filename(artist_name)
             if album_name and album_name not in ["YouTube Audio", "Single"]:
                 subfolder = os.path.join(subfolder, scraper.sanitize_filename(album_name))
@@ -284,13 +315,18 @@ def process_download_job(job_id, tracks, audio_format, audio_quality):
             if res.get("success"):
                 job["completed"] += 1
                 rel_path = os.path.relpath(res["filepath"], scraper.download_dir)
-                job["files"].append({
+                entry = {
+                    "videoId": video_id,
                     "title": track_title,
                     "artist": artist_name,
                     "album": album_name,
                     "filename": res["filename"],
-                    "relative_path": rel_path
-                })
+                    "relative_path": rel_path,
+                    "ext": os.path.splitext(res["filename"])[1][1:].lower(),
+                }
+                if job["target"] == "device":
+                    entry["file_url"] = f"/api/download/{job_id}/files/{len(job['files'])}"
+                job["files"].append(entry)
             else:
                 job["errors"].append({"track": track_title, "error": res.get("error")})
 
@@ -308,12 +344,36 @@ def download_status(job_id):
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job)
 
+@app.route("/api/download/<job_id>/files/<int:index>", methods=["GET"])
+def download_device_file(job_id, index):
+    """Hand a converted track to the phone app."""
+    job = download_jobs.get(job_id)
+    if not job or job.get("target") != "device" or index >= len(job["files"]):
+        return api_error("This download is no longer available.", "NOT_FOUND", 404)
+    full_path = library_path(job["files"][index]["relative_path"])
+    if not full_path or not os.path.isfile(full_path):
+        return api_error("This download is no longer available.", "NOT_FOUND", 404)
+    return send_file(full_path, as_attachment=True)
+
+@app.route("/api/download/<job_id>", methods=["DELETE"])
+def finish_device_download(job_id):
+    """The phone has its copies: drop the server-side ones."""
+    job = download_jobs.get(job_id)
+    if not job or job.get("target") != "device":
+        return api_error("Download not found.", "NOT_FOUND", 404)
+    if job["status"] != "completed":
+        return api_error("This download is still in progress.", "CONFLICT", 409)
+    shutil.rmtree(device_job_dir(job_id), ignore_errors=True)
+    download_jobs.pop(job_id, None)
+    return api_ok({"id": job_id})
+
 @app.route("/api/library", methods=["GET"])
 def get_library():
     music_files = []
     supported_exts = (".mp3", ".m4a", ".flac", ".wav", ".opus")
 
-    for root, _, files in os.walk(scraper.download_dir):
+    for root, dirs, files in os.walk(scraper.download_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]  # skip phone staging (DEVICE_DIR)
         for f in files:
             if f.endswith(supported_exts):
                 full_path = os.path.join(root, f)

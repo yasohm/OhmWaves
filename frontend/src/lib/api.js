@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 export const USER_ID = 'local-listener';
 const SERVER_KEY = 'ohmwave:server';
 
-/** The native app talks to the OhmWave server on your computer; the web app uses its own origin. */
+/** The native app talks to the OhmWaves server on your computer; the web app uses its own origin. */
 export const isNativeApp = Capacitor.isNativePlatform();
 export const DEFAULT_SERVER = import.meta.env.VITE_DEFAULT_SERVER || '';
 
@@ -42,7 +42,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
-    throw new Error('Can’t reach the OhmWave server. Check that it’s running and try again.');
+    throw new Error('Can’t reach the OhmWaves server. Check that it’s running and try again.');
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.success === false) {

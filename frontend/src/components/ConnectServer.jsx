@@ -10,13 +10,13 @@ async function probe(base) {
     const response = await fetch(`${base}/api/library`, { signal: controller.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    if (!Array.isArray(data.files)) throw new Error('not an OhmWave server');
+    if (!Array.isArray(data.files)) throw new Error('not an OhmWaves server');
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Native app only: find the OhmWave server running on the user's computer. */
+/** Native app only: find the OhmWaves server running on the user's computer. */
 export default function ConnectServer({ onConnected }) {
   const [address, setAddress] = useState(() => (getServer() || DEFAULT_SERVER).replace(/^http:\/\//, ''));
   const [status, setStatus] = useState('idle'); // idle | checking | error
@@ -36,7 +36,7 @@ export default function ConnectServer({ onConnected }) {
       setStatus('error');
       setError(err.name === 'AbortError' || err instanceof TypeError
         ? `Couldn’t reach ${base}. Check that “python app.py” is running on your computer and that your phone is on the same Wi‑Fi.`
-        : `${base} answered, but it doesn’t look like an OhmWave server.`);
+        : `${base} answered, but it doesn’t look like an OhmWaves server.`);
     }
   };
 
@@ -46,8 +46,8 @@ export default function ConnectServer({ onConnected }) {
         <OhmMark />
         <span className="mono-label">Connect your library</span>
       </div>
-      <h1 id="connect-title">OhmWave</h1>
-      <p>Your music lives on your computer. Enter the address of the OhmWave server running there.</p>
+      <h1 id="connect-title">OhmWaves</h1>
+      <p>Your music lives on your computer. Enter the address of the OhmWaves server running there.</p>
       <form className="connect__form" onSubmit={connect} noValidate>
         <label className="mono-label" htmlFor="server-address">Server address</label>
         <div className="connect__field">

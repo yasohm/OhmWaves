@@ -18,7 +18,7 @@ const wavePath = ({ amp, freq, phase, y }) => {
   return `M${points.join(' L')}`;
 };
 
-/** First-run screen. OhmWave is local, so there is no sign-up: every action leads straight into music. */
+/** First-run screen. OhmWaves is local, so there is no sign-up: every action leads straight into music. */
 export default function Welcome({ onStart, onBrowse, onLibrary }) {
   const dialogRef = useRef(null);
   // Move focus into the dialog for screen readers without drawing a ring on the first button.
@@ -34,7 +34,7 @@ export default function Welcome({ onStart, onBrowse, onLibrary }) {
         <OhmMark animated />
         <span className="mono-label">Music · Mixes · Downloads</span>
       </div>
-      <h1 id="welcome-title">OhmWave</h1>
+      <h1 id="welcome-title">OhmWaves</h1>
       <p>Every track, every mood, at full current. Start listening in seconds.</p>
       <div className="welcome__actions">
         <button type="button" className="btn btn--primary btn--block" onClick={onStart}>Start listening</button>

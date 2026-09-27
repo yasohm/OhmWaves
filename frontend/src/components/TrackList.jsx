@@ -48,7 +48,7 @@ export default function TrackList({ tracks, source = '', sourceKind = 'playlist'
       const menuItems = [
         { label: 'Play next', icon: ListPlus, onSelect: () => player.playNext(track) },
         { label: 'Add to queue', icon: ListEnd, onSelect: () => player.addToQueue(track) },
-        ...(track.videoId ? [{ label: 'Download', icon: Download, onSelect: () => library.download(track) }] : []),
+        ...(track.videoId && !track.localUri && !library.findLocal(track) ? [{ label: 'Download', icon: Download, onSelect: () => library.download(track) }] : []),
         ...(onDelete ? [{ label: 'Delete from device', icon: Trash2, tone: 'danger', onSelect: () => onDelete(track) }] : []),
       ];
       return <TrackRow key={`${track.id}-${i}`} track={track} position={numbered ? i + 1 : '•'}

@@ -24,7 +24,7 @@ export default function CollectionView({ route, navigate }) {
   } else {
     const section = feed?.sections.find((s) => s.id === route.id);
     config = section
-      ? { title: sectionTitle(section), kicker: section.id === 'trending' ? 'Chart' : 'Made for you · OhmWave', tracks: section.tracks, ready: true, showReason: section.id === 'for-you' }
+      ? { title: sectionTitle(section), kicker: section.id === 'trending' ? 'Chart' : 'Made for you · OhmWaves', tracks: section.tracks, ready: true, showReason: section.id === 'for-you' }
       : { title: 'Mix', kicker: 'Made for you', tracks: [], ready: status !== 'loading' };
   }
 
@@ -39,7 +39,7 @@ export default function CollectionView({ route, navigate }) {
         showAlbum={route.kind !== 'local-album'} onDelete={config.onDelete ? library.requestDelete : undefined} />
       : <EmptyState icon={ListMusic} title={route.kind === 'liked' ? 'Songs you like will appear here' : 'Nothing in this mix yet'}
         action={<button type="button" className="btn btn--primary" onClick={() => navigate({ name: 'search' })}>Find music</button>}>
-        {route.kind === 'liked' ? 'Tap the heart on any song to save it here. Likes also teach your recommendations.' : 'Keep listening and OhmWave will fill it in.'}
+        {route.kind === 'liked' ? 'Tap the heart on any song to save it here. Likes also teach your recommendations.' : 'Keep listening and OhmWaves will fill it in.'}
       </EmptyState>)}
   </div>;
 }

@@ -15,7 +15,7 @@ const EASE = '0.45 0 0.55 1';
 
 const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-/** OhmWave brand mark. Inherits color from `currentColor`; `animated` draws it in and ripples the wave tails. */
+/** OhmWaves brand mark. Inherits color from `currentColor`; `animated` draws it in and ripples the wave tails. */
 export default function OhmMark({ animated = false, className = '' }) {
   const ripple = animated && !prefersReducedMotion();
   return <svg className={`ohm-mark ${animated ? 'ohm-mark--animated' : ''} ${className}`} viewBox="150 157 724 724"

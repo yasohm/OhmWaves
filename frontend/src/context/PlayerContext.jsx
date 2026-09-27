@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { api, apiUrl, encodePath, sendQuietly, USER_ID, warmTrack } from '../lib/api';
+import { api, apiUrl, encodePath, isNativeApp, sendQuietly, USER_ID, warmTrack } from '../lib/api';
+import NativeAudio from '../lib/nativeAudio';
 import { durationToSeconds, normalizeTrack, shuffleArray } from '../lib/tracks';
 import { useLibrary } from './LibraryContext';
 import { useToast } from './ToastContext';
@@ -19,8 +20,8 @@ export function PlayerProvider({ children }) {
   const { findLocal } = useLibrary();
   const { notify } = useToast();
   const audioRef = useRef(null);
-  /** One <audio> element for the app's lifetime, created on first use. */
-  const getAudio = useCallback(() => { if (!audioRef.current) audioRef.current = new Audio(); return audioRef.current; }, []);
+  /** One audio engine for the app's lifetime, created on first use. The phone app plays natively so music survives the background. */
+  const getAudio = useCallback(() => { if (!audioRef.current) audioRef.current = isNativeApp ? new NativeAudio() : new Audio(); return audioRef.current; }, []);
   const [queue, setQueue] = useState([]);
   const [index, setIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -40,6 +41,7 @@ export function PlayerProvider({ children }) {
   const fetchingMore = useRef(false);
   const errorStreak = useRef(0);
   const unshuffled = useRef(null);
+  const restoredQid = useRef(null);
 
   // ---------------------------------------------------------------- telemetry
   /** Report how the last track was consumed so recommendations learn from plays and skips. */
@@ -213,7 +215,8 @@ export function PlayerProvider({ children }) {
 
   // ------------------------------------------------------------ audio engine
   const nextRef = useRef(next);
-  useLayoutEffect(() => { nextRef.current = next; });
+  const previousRef = useRef(previous);
+  useLayoutEffect(() => { nextRef.current = next; previousRef.current = previous; });
 
   useEffect(() => {
     const audio = getAudio();
@@ -247,6 +250,9 @@ export function PlayerProvider({ children }) {
         notify(canSkip ? `Couldn’t play “${title}”. Skipping…` : `Couldn’t play “${title}”.`, { tone: 'error' });
         if (canSkip) setTimeout(() => nextRef.current(false), 1200);
       },
+      // Notification and headset buttons on the phone (NativeAudio).
+      remotenext: () => nextRef.current(true),
+      remoteprevious: () => previousRef.current(),
     };
     Object.entries(on).forEach(([event, handler]) => audio.addEventListener(event, handler));
     const flush = () => finalizeListen('switch');
@@ -263,12 +269,21 @@ export function PlayerProvider({ children }) {
     const audio = getAudio();
     const track = state.current.current;
     if (!track) { audio.pause(); audio.removeAttribute('src'); return; }
-    const local = track.relative_path ? track : state.current.findLocal(track);
-    const url = local?.relative_path
+    if (restoredQid.current === track.qid) {
+      // Reattached to a track that kept playing while the app was closed: it's already loaded.
+      restoredQid.current = null;
+      listen.current = { track, ms: 0, last: null, started: true };
+      return;
+    }
+    const local = track.localUri || track.relative_path ? track : state.current.findLocal(track);
+    const url = local?.localUri || (local?.relative_path
       ? apiUrl(`/api/stream/${encodePath(local.relative_path)}`)
-      : track.videoId ? apiUrl(`/api/listen/${track.videoId}`) : null;
+      : track.videoId ? apiUrl(`/api/listen/${track.videoId}`) : null);
     if (!url) { notify('This track can’t be played.', { tone: 'error' }); return; }
     listen.current = { track, ms: 0, last: null, started: false };
+    // Shown in the phone's notification; a plain <audio> element ignores it.
+    const { qid: _qid, ...saved } = track;
+    audio.nowPlaying = { title: track.title, artist: track.artist, album: track.album, artwork: local?.artUri || track.cover, track: saved };
     setProgress({ time: 0, duration: durationToSeconds(track.duration) });
     setBuffering(true);
     audio.src = url;
@@ -276,6 +291,19 @@ export function PlayerProvider({ children }) {
       if (error.name === 'NotAllowedError') { setBuffering(false); setIsPlaying(false); }
     });
   }, [getAudio, currentQid, notify]);
+
+  // Phone app reopened while music kept playing in the background: show that track instead of an empty player.
+  useEffect(() => {
+    if (!isNativeApp) return;
+    getAudio().restore().then((track) => {
+      if (!track || state.current.queue.length) return;
+      const item = withQid(track);
+      restoredQid.current = item.qid;
+      setQueue([item]);
+      setIndex(0);
+      setProgress({ time: getAudio().currentTime, duration: getAudio().duration || durationToSeconds(track.duration) });
+    });
+  }, [getAudio]);
 
   // Keep autoplay one step ahead and pre-resolve the next stream so skips feel instant.
   useEffect(() => {

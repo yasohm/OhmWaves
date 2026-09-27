@@ -1,6 +1,6 @@
-"""Hybrid, personal recommendations for the local OhmWave app.
+"""Hybrid, personal recommendations for the local OhmWaves app.
 
-OhmWave usually has a single listener, so pure collaborative filtering has
+OhmWaves usually has a single listener, so pure collaborative filtering has
 nothing to learn from. The engine therefore combines several signals:
 
 1. **Taste profile.** Every play, skip, and like becomes a weighted, time-decayed
