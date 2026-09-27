@@ -51,4 +51,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- ExoPlayer holds CPU and Wi-Fi locks while playing (WAKE_MODE_NETWORK); acquiring them without this crashes. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

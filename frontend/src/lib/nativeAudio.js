@@ -79,6 +79,7 @@ export default class NativeAudio extends EventTarget {
     this._setPaused(!state.playing);
     this._emit('durationchange');
     if (state.playing) this._emit('playing');
+    if (state.openPlayer) setTimeout(() => this._emit('remoteopen')); // launched from the notification
     return track;
   }
 

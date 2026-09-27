@@ -1,6 +1,7 @@
 package com.ohmwave.music;
 
 import android.content.ComponentName;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -35,6 +36,8 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
 
     private ListenableFuture<MediaController> controllerFuture;
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** The app was launched by tapping the notification; the web player asks for this once it's ready. */
+    private boolean openPlayerOnStart;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -93,6 +96,8 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
     @Override
     public void load() {
         PlaybackService.remoteListener = this;
+        Intent launch = getActivity().getIntent();
+        openPlayerOnStart = launch != null && PlaybackService.ACTION_OPEN_PLAYER.equals(launch.getAction());
         SessionToken token = new SessionToken(getContext(), new ComponentName(getContext(), PlaybackService.class));
         controllerFuture = new MediaController.Builder(getContext(), token).buildAsync();
         controllerFuture.addListener(() -> {
@@ -107,6 +112,12 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
         if (PlaybackService.remoteListener == this) PlaybackService.remoteListener = null;
         // Releasing the controller does not stop playback: the service keeps the current track going.
         MediaController.releaseFuture(controllerFuture);
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        // Notification tapped while the app was alive in the background.
+        if (PlaybackService.ACTION_OPEN_PLAYER.equals(intent.getAction())) onRemoteAction("open");
     }
 
     @Override
@@ -160,9 +171,15 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
         }
         Bundle extras = new Bundle();
         extras.putString(EXTRA_TRACK, call.getString("track", ""));
+        String title = call.getString("title");
+        String artist = call.getString("artist");
+        // Title and display title both set: some skins read one, some the other. Text is passed through untouched,
+        // so Arabic and other right-to-left titles keep their direction.
         MediaMetadata.Builder metadata = new MediaMetadata.Builder()
-                .setTitle(call.getString("title"))
-                .setArtist(call.getString("artist"))
+                .setTitle(title)
+                .setDisplayTitle(title)
+                .setArtist(artist)
+                .setSubtitle(artist)
                 .setAlbumTitle(call.getString("album"))
                 .setExtras(extras);
         String artwork = call.getString("artwork");
@@ -181,7 +198,10 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
     @PluginMethod
     public void play(PluginCall call) {
         withController(call, controller -> {
-            if (controller.getPlaybackState() == Player.STATE_ENDED) controller.seekTo(0);
+            int state = controller.getPlaybackState();
+            // Swiping the paused notification away stops the player; reload the same track where it was.
+            if (state == Player.STATE_IDLE && controller.getMediaItemCount() > 0) controller.prepare();
+            if (state == Player.STATE_ENDED) controller.seekTo(0);
             controller.play();
         });
     }
@@ -226,6 +246,8 @@ public class NativePlayerPlugin extends Plugin implements PlaybackService.Remote
                 data.put("duration", duration > 0 ? duration / 1000.0 : 0);
                 data.put("playing", controller.getPlayWhenReady());
             }
+            data.put("openPlayer", openPlayerOnStart);
+            openPlayerOnStart = false;
             call.resolve(data);
         });
     }

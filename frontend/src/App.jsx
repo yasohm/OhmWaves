@@ -43,7 +43,7 @@ function useRouter(scrollRef) {
 function Shell() {
   const mainRef = useRef(null);
   const [route, navigate] = useRouter(mainRef);
-  const { current } = usePlayer();
+  const { current, playerRequests } = usePlayer();
   const [queueOpen, setQueueOpen] = useState(false);
   const [searchState, setSearchState] = useState(initialSearchState);
   const [pendingSearch, setPendingSearch] = useState(null);
@@ -59,6 +59,13 @@ function Shell() {
   }, [navigate]);
 
   const openPlayer = () => navigate({ ...route, overlay: 'player' });
+  // Tapping the phone's media notification opens the full-screen player (once there is a track to show).
+  const handledRequests = useRef(0);
+  useEffect(() => {
+    if (!current || playerRequests === handledRequests.current) return;
+    handledRequests.current = playerRequests;
+    if (route.overlay !== 'player') navigate({ ...route, overlay: 'player' });
+  }, [playerRequests, current, route, navigate]);
   const closePlayer = useCallback(() => window.history.back(), []);
   const clearPending = useCallback(() => setPendingSearch(null), []);
   const finishWelcome = (next) => {

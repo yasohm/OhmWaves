@@ -1,6 +1,10 @@
 package com.ohmwave.music;
 
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
@@ -8,10 +12,16 @@ import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.ForwardingPlayer;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.BitmapLoader;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSourceBitmapLoader;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.session.CommandButton;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.session.CacheBitmapLoader;
 import androidx.media3.session.DefaultMediaNotificationProvider;
 import androidx.media3.session.MediaSession;
 import androidx.media3.session.MediaSessionService;
@@ -19,9 +29,9 @@ import androidx.media3.session.SessionCommand;
 import androidx.media3.session.SessionCommands;
 import androidx.media3.session.SessionResult;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
 
 /**
  * Plays audio outside the WebView so it survives the app going to the background, and publishes the
@@ -36,6 +46,8 @@ public class PlaybackService extends MediaSessionService {
     static final String ACTION_NEXT = "next";
     static final String ACTION_PREVIOUS = "previous";
     static final String ACTION_STOP = "stop";
+    /** Notification tap: open the app on the full-screen player. */
+    static final String ACTION_OPEN_PLAYER = "com.ohmwave.music.OPEN_PLAYER";
     private static final String COMMAND_STOP = "com.ohmwave.music.STOP";
 
     interface RemoteListener {
@@ -50,7 +62,12 @@ public class PlaybackService extends MediaSessionService {
     @Override
     public void onCreate() {
         super.onCreate();
-        ExoPlayer exoPlayer = new ExoPlayer.Builder(this)
+        // Streams and downloads may lack a seek index (e.g. VBR MP3); estimate one so the notification's seek bar
+        // always works and shows the track's length.
+        DefaultExtractorsFactory extractors = new DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
+                .setConstantBitrateSeekingAlwaysEnabled(true);
+        ExoPlayer exoPlayer = new ExoPlayer.Builder(this, new DefaultRenderersFactory(this), new DefaultMediaSourceFactory(this, extractors))
                 // Pause for calls and other apps, and when headphones are unplugged.
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
@@ -60,15 +77,20 @@ public class PlaybackService extends MediaSessionService {
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
 
+        // Not shown as a button (the card keeps just previous / play-pause / next, like Deezer), but still accepted
+        // from other controllers. Users stop by pausing and swiping the notification away.
         SessionCommand stopCommand = new SessionCommand(COMMAND_STOP, Bundle.EMPTY);
-        CommandButton stopButton = new CommandButton.Builder()
-                .setDisplayName(getString(R.string.action_stop))
-                .setIconResId(R.drawable.ic_stop)
-                .setSessionCommand(stopCommand)
-                .build();
+
+        Intent openPlayer = new Intent(this, MainActivity.class)
+                .setAction(ACTION_OPEN_PLAYER)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent sessionActivity = PendingIntent.getActivity(this, 0, openPlayer,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         session = new MediaSession.Builder(this, new QueueForwardingPlayer(exoPlayer))
-                .setCustomLayout(ImmutableList.of(stopButton))
+                .setSessionActivity(sessionActivity)
+                .setBitmapLoader(new CacheBitmapLoader(new ArtworkLoader(new DataSourceBitmapLoader(this),
+                        BitmapFactory.decodeResource(getResources(), R.drawable.artwork_placeholder))))
                 .setCallback(new MediaSession.Callback() {
                     @NonNull
                     @Override
@@ -135,7 +157,45 @@ public class PlaybackService extends MediaSessionService {
         super.onDestroy();
     }
 
-    /** Always offers next/previous so the notification shows them; the web player's queue decides what they do. */
+    /** Loads cover art for the notification, falling back to the branded wave artwork so the card is never blank. */
+    private static final class ArtworkLoader implements BitmapLoader {
+        private final BitmapLoader delegate;
+        private final Bitmap placeholder;
+
+        ArtworkLoader(BitmapLoader delegate, Bitmap placeholder) {
+            this.delegate = delegate;
+            this.placeholder = placeholder;
+        }
+
+        @Override
+        public boolean supportsMimeType(@NonNull String mimeType) {
+            return delegate.supportsMimeType(mimeType);
+        }
+
+        @NonNull
+        @Override
+        public ListenableFuture<Bitmap> decodeBitmap(@NonNull byte[] data) {
+            return orPlaceholder(delegate.decodeBitmap(data));
+        }
+
+        @NonNull
+        @Override
+        public ListenableFuture<Bitmap> loadBitmap(@NonNull Uri uri) {
+            return orPlaceholder(delegate.loadBitmap(uri));
+        }
+
+        @Override
+        public ListenableFuture<Bitmap> loadBitmapFromMetadata(@NonNull MediaMetadata metadata) {
+            if (metadata.artworkData == null && metadata.artworkUri == null) return Futures.immediateFuture(placeholder);
+            return BitmapLoader.super.loadBitmapFromMetadata(metadata);
+        }
+
+        private ListenableFuture<Bitmap> orPlaceholder(ListenableFuture<Bitmap> bitmap) {
+            return Futures.catching(bitmap, Exception.class, error -> placeholder, MoreExecutors.directExecutor());
+        }
+    }
+
+    /** Always offers next/previous and seeking so the notification shows them; the web player's queue decides what next/previous do. */
     private static final class QueueForwardingPlayer extends ForwardingPlayer {
         QueueForwardingPlayer(Player player) {
             super(player);
@@ -145,7 +205,8 @@ public class PlaybackService extends MediaSessionService {
         @Override
         public Commands getAvailableCommands() {
             return super.getAvailableCommands().buildUpon()
-                    .addAll(COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .addAll(COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                            COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
                     .build();
         }
 
@@ -153,6 +214,7 @@ public class PlaybackService extends MediaSessionService {
         public boolean isCommandAvailable(int command) {
             return command == COMMAND_SEEK_TO_NEXT || command == COMMAND_SEEK_TO_NEXT_MEDIA_ITEM
                     || command == COMMAND_SEEK_TO_PREVIOUS || command == COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+                    || command == COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM
                     || super.isCommandAvailable(command);
         }
 

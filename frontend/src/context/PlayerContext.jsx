@@ -14,6 +14,13 @@ const readVolume = () => { try { const v = Number(localStorage.getItem(VOLUME_KE
 let qidCounter = 0;
 const withQid = (track, extra = {}) => { qidCounter += 1; return { ...track, ...extra, qid: qidCounter }; };
 
+/**
+ * Cover for Android's media notification. Android loads it itself, so a downloaded cover must be its file:// path,
+ * not the WebView-only URL the app's <img> tags use.
+ */
+const notificationArtwork = (local, track) => local?.artUri || track.artUri
+  || track.cover?.replace(/^https?:\/\/localhost\/_capacitor_file_/, 'file://') || '';
+
 const isTypingTarget = (el) => el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName));
 
 export function PlayerProvider({ children }) {
@@ -32,6 +39,7 @@ export function PlayerProvider({ children }) {
   const [sourceKind, setSourceKind] = useState('playlist'); // playlist | album | artist | search
   const [volume, setVolumeState] = useState(readVolume);
   const [progress, setProgress] = useState({ time: 0, duration: 0 });
+  const [playerRequests, setPlayerRequests] = useState(0); // notification taps asking for the full-screen player
 
   const current = queue[index] || null;
   const state = useRef({});
@@ -253,6 +261,7 @@ export function PlayerProvider({ children }) {
       // Notification and headset buttons on the phone (NativeAudio).
       remotenext: () => nextRef.current(true),
       remoteprevious: () => previousRef.current(),
+      remoteopen: () => setPlayerRequests((n) => n + 1),
     };
     Object.entries(on).forEach(([event, handler]) => audio.addEventListener(event, handler));
     const flush = () => finalizeListen('switch');
@@ -283,7 +292,7 @@ export function PlayerProvider({ children }) {
     listen.current = { track, ms: 0, last: null, started: false };
     // Shown in the phone's notification; a plain <audio> element ignores it.
     const { qid: _qid, ...saved } = track;
-    audio.nowPlaying = { title: track.title, artist: track.artist, album: track.album, artwork: local?.artUri || track.cover, track: saved };
+    audio.nowPlaying = { title: track.title, artist: track.artist, album: track.album, artwork: notificationArtwork(local, track), track: saved };
     setProgress({ time: 0, duration: durationToSeconds(track.duration) });
     setBuffering(true);
     audio.src = url;
@@ -346,10 +355,10 @@ export function PlayerProvider({ children }) {
   const isCurrent = useCallback((track) => !!current && !!track && current.id === track.id, [current]);
 
   const value = useMemo(() => ({
-    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume,
+    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests,
     playFrom, shufflePlay, togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo,
     toggleShuffle, cycleRepeat, setVolume, isCurrent,
-  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playFrom, shufflePlay,
+  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests, playFrom, shufflePlay,
     togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo, toggleShuffle, cycleRepeat, setVolume, isCurrent]);
 
   const progressValue = useMemo(() => ({ ...progress, seek }), [progress, seek]);
