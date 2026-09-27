@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Download, Heart, ListMusic, Share, Speaker, UserRound } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
+import { useConnection } from '../context/ConnectionContext';
 import { useToast } from '../context/ToastContext';
 import Artwork from './Artwork';
 import QueuePanel from './QueuePanel';
@@ -16,6 +17,7 @@ export default function NowPlaying({ onClose, onOpenArtist }) {
   const { current, source, sourceKind, queue, index, jumpTo } = usePlayer();
   const { isLiked, toggleLike, download, findLocal } = useLibrary();
   const { notify } = useToast();
+  const { offline } = useConnection();
   const [showQueue, setShowQueue] = useState(false);
   const closeRef = useRef(null);
 
@@ -29,7 +31,7 @@ export default function NowPlaying({ onClose, onOpenArtist }) {
 
   if (!current) return null;
   const liked = isLiked(current);
-  const canDownload = current.videoId && !current.localUri && !findLocal(current);
+  const canDownload = !offline && current.videoId && !current.localUri && !findLocal(current);
   const upNext = queue[index + 1];
   const artistName = current.artist.split(',')[0].trim();
 

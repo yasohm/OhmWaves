@@ -31,6 +31,28 @@ export const apiFetch = (path, options) => fetch(apiUrl(path), options);
 /** Encode each segment of a library path so names with #, ? or spaces survive. */
 export const encodePath = (relativePath) => relativePath.split(/[\\/]/).map(encodeURIComponent).join('/');
 
+const networkErrorListeners = new Set();
+/** Hear about requests that couldn't reach the server at all (offline mode re-checks the connection). */
+export function onNetworkError(listener) {
+  networkErrorListeners.add(listener);
+  return () => networkErrorListeners.delete(listener);
+}
+
+/** True when the server answers within `timeoutMs`. Any HTTP reply counts: it means the server is up. */
+export async function pingServer(timeoutMs = 4000) {
+  if (!apiBase && isNativeApp) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    await apiFetch('/api/health', { signal: controller.signal, cache: 'no-store' });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request(path, { method = 'GET', body, signal } = {}) {
   let response;
   try {
@@ -42,6 +64,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
+    networkErrorListeners.forEach((listener) => listener());
     throw new Error('Can’t reach the OhmWaves server. Check that it’s running and try again.');
   }
   const data = await response.json().catch(() => ({}));

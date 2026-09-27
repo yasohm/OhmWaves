@@ -3,18 +3,30 @@ import { api, apiUrl, isNativeApp, USER_ID } from '../lib/api';
 import { libraryFileToTrack, normalizeTrack } from '../lib/tracks';
 import * as offline from '../lib/offline';
 import { useToast } from './ToastContext';
+import { useConnection } from './ConnectionContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const LibraryContext = createContext(null);
 
 const SETTINGS_KEY = 'ohmwave:download-settings';
+// Liked Songs are kept on the phone too, so the list still shows (and plays its downloads) offline.
+const LIKES_KEY = 'ohmwave:likes-cache';
+const readCachedLikes = () => { try { const list = JSON.parse(localStorage.getItem(LIKES_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } };
+const cacheLikes = (list) => { try { localStorage.setItem(LIKES_KEY, JSON.stringify(list)); } catch { /* cache only */ } };
+const NEEDS_SERVER = 'needs your OhmWaves server. You’re offline right now.';
 const readSettings = () => {
   try { return { format: 'mp3', quality: '320', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return { format: 'mp3', quality: '320' }; }
 };
 
 export function LibraryProvider({ children }) {
   const { notify } = useToast();
-  const [likes, setLikes] = useState([]);
+  const { offline: isOffline } = useConnection();
+  const [likes, setLikesState] = useState(() => (isNativeApp ? readCachedLikes() : []));
+  const setLikes = useCallback((update) => setLikesState((current) => {
+    const next = typeof update === 'function' ? update(current) : update;
+    if (isNativeApp) cacheLikes(next);
+    return next;
+  }), []);
   const [files, setFiles] = useState([]);
   const [filesState, setFilesState] = useState('loading'); // loading | ready | error
   const [jobs, setJobs] = useState({});
@@ -44,15 +56,16 @@ export function LibraryProvider({ children }) {
     refreshFiles();
     api.get(`/api/likes/${USER_ID}`)
       .then((data) => setLikes((data.tracks || []).map((t) => normalizeTrack(t))))
-      .catch(() => {});
+      .catch(() => {}); // offline: keep the cached list
     const timers = timersRef.current;
     return () => Object.values(timers).forEach(clearInterval);
-  }, [refreshFiles]);
+  }, [refreshFiles, setLikes]);
 
   const likedIds = useMemo(() => new Set(likes.map((t) => t.id)), [likes]);
   const isLiked = useCallback((track) => !!track && likedIds.has(track.id), [likedIds]);
 
   const toggleLike = useCallback(async (track) => {
+    if (isOffline) { notify(`Liking songs ${NEEDS_SERVER}`, { tone: 'error' }); return; }
     const wasLiked = likedIds.has(track.id);
     setLikes((list) => (wasLiked ? list.filter((t) => t.id !== track.id) : [track, ...list]));
     try {
@@ -63,7 +76,7 @@ export function LibraryProvider({ children }) {
       setLikes((list) => (wasLiked ? [track, ...list] : list.filter((t) => t.id !== track.id)));
       notify(error.message, { tone: 'error' });
     }
-  }, [likedIds, notify]);
+  }, [isOffline, likedIds, notify, setLikes]);
 
   const setSettings = useCallback((patch) => {
     setSettingsState((current) => {
@@ -155,6 +168,7 @@ export function LibraryProvider({ children }) {
   }, [files, offlineById]);
 
   const download = useCallback(async (tracks) => {
+    if (isOffline) { notify(`Downloading ${NEEDS_SERVER}`, { tone: 'error' }); return; }
     const list = (Array.isArray(tracks) ? tracks : [tracks]).filter((t) => t.videoId && !findLocal(t));
     if (!list.length) { notify(isNativeApp ? 'Already downloaded to this phone.' : 'These tracks are already on your device.'); return; }
     const label = list.length === 1 ? `“${list[0].title}”` : `${list.length} tracks`;
@@ -171,7 +185,7 @@ export function LibraryProvider({ children }) {
     } catch (error) {
       notify(error.message, { tone: 'error' });
     }
-  }, [findLocal, notify, pollDeviceJob, pollJob, settings]);
+  }, [findLocal, isOffline, notify, pollDeviceJob, pollJob, settings]);
 
   const deleteFile = useCallback(async (track) => {
     if (isNativeApp) {

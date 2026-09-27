@@ -1,6 +1,7 @@
 import { Download, Loader2, Pause, Play, Shuffle } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
+import { useConnection } from '../context/ConnectionContext';
 import Artwork from './Artwork';
 
 /** Playlist/album header: large cover, mono kicker, display title and the orange Play action. */
@@ -8,7 +9,10 @@ export default function CollectionHero({ kicker, title, meta, cover, variant, pa
   const player = usePlayer();
   const { download } = useLibrary();
   const playingHere = player.source === source && tracks.some((t) => player.isCurrent(t));
-  const downloadable = tracks.filter((t) => t.videoId);
+  const { offline } = useConnection();
+  // Offline, Play starts from the first downloaded song rather than refusing a list that begins with a streamed one.
+  const firstPlayable = Math.max(0, tracks.findIndex((t) => player.isPlayable(t)));
+  const downloadable = offline ? [] : tracks.filter((t) => t.videoId && !t.localUri); // downloading needs the server
 
   return <>
     <header className="collection-hero">
@@ -24,7 +28,7 @@ export default function CollectionHero({ kicker, title, meta, cover, variant, pa
       {downloadable.length > 0 && <button type="button" className="icon-btn icon-btn--lg" onClick={() => download(downloadable)} aria-label={`Download all ${downloadable.length} tracks`}><Download /></button>}
       {extraActions}
       <button type="button" className="round-btn round-btn--accent action-bar__play" disabled={!tracks.length}
-        onClick={() => (playingHere ? player.togglePlay() : player.playFrom(tracks, 0, source, sourceKind))}
+        onClick={() => (playingHere ? player.togglePlay() : player.playFrom(tracks, firstPlayable, source, sourceKind))}
         aria-label={playingHere && player.isPlaying ? `Pause ${title}` : `Play ${title}`}>
         {playingHere && player.isBuffering ? <Loader2 className="spin" /> : playingHere && player.isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
       </button>

@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { Loader2, Wifi } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CloudOff, Loader2, Wifi } from 'lucide-react';
 import OhmMark from './OhmMark';
 import { DEFAULT_SERVER, getServer, normalizeServer, setServer } from '../lib/api';
+import { readIndex } from '../lib/offline';
 
 async function probe(base) {
   const controller = new AbortController();
@@ -17,10 +18,12 @@ async function probe(base) {
 }
 
 /** Native app only: find the OhmWaves server running on the user's computer. */
-export default function ConnectServer({ onConnected }) {
+export default function ConnectServer({ onConnected, onPlayOffline }) {
   const [address, setAddress] = useState(() => (getServer() || DEFAULT_SERVER).replace(/^http:\/\//, ''));
   const [status, setStatus] = useState('idle'); // idle | checking | error
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState(0); // songs already on this phone, playable without a server
+  useEffect(() => { readIndex().then((entries) => setSaved(entries.length)); }, []);
 
   const connect = async (event) => {
     event.preventDefault();
@@ -62,6 +65,9 @@ export default function ConnectServer({ onConnected }) {
         <button type="submit" className="btn btn--primary btn--block" disabled={status === 'checking'}>
           {status === 'checking' ? <><Loader2 className="spin" aria-hidden="true" />Connecting…</> : 'Connect'}
         </button>
+        {saved > 0 && <button type="button" className="btn btn--outline btn--block" onClick={onPlayOffline}>
+          <CloudOff aria-hidden="true" />Play {saved} downloaded {saved === 1 ? 'song' : 'songs'} offline
+        </button>}
       </form>
     </div>
   </section>;

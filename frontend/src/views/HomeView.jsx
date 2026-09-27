@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Bell, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Server } from 'lucide-react';
+import { Bell, CloudOff, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Server } from 'lucide-react';
 import OhmMark from '../components/OhmMark';
 import { greeting } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
+import { useConnection } from '../context/ConnectionContext';
+import { isNativeApp } from '../lib/api';
 import useHomeFeed from '../hooks/useHomeFeed';
 import { ArtistCard, Shelf, TrackCard } from '../components/Shelf';
 import { ShelfSkeleton } from '../components/Skeleton';
@@ -55,6 +57,7 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
   const { feed, status, refreshing, reload } = useHomeFeed();
   const player = usePlayer();
   const { likes, jobs } = useLibrary();
+  const { setOfflineMode } = useConnection();
   const [filter, setFilter] = useState('all');
   const downloading = Object.values(jobs).some((j) => j.status !== (j.device ? 'saved' : 'completed'));
 
@@ -80,6 +83,7 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
         <TrackMenu label="Account and settings" triggerClass="avatar" trigger={<span aria-hidden="true">Y</span>} items={[
           { label: 'Refresh recommendations', icon: RefreshCw, onSelect: reload },
           { label: 'Download settings', icon: Download, onSelect: () => navigate({ name: 'library', tab: 'downloaded' }) },
+          ...(isNativeApp ? [{ label: 'Offline mode', icon: CloudOff, onSelect: () => setOfflineMode(true) }] : []),
           { label: 'Show welcome screen', icon: Sparkles, onSelect: onShowWelcome },
           ...(onChangeServer ? [{ label: 'Change server', icon: Server, onSelect: onChangeServer }] : []),
         ]} />

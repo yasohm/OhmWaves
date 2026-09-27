@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, CloudOff } from 'lucide-react';
 import { ToastProvider } from './context/ToastContext';
 import { LibraryProvider } from './context/LibraryContext';
+import { ConnectionProvider, readOfflineMode, saveOfflineMode, useConnection } from './context/ConnectionContext';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { BottomNav, Sidebar } from './components/Navigation';
 import PlayerBar from './components/PlayerBar';
@@ -9,6 +10,9 @@ import NowPlaying from './components/NowPlaying';
 import QueuePanel from './components/QueuePanel';
 import DownloadTray from './components/DownloadTray';
 import HomeView from './views/HomeView';
+import OfflineHome from './views/OfflineHome';
+import OfflineBanner from './components/OfflineBanner';
+import EmptyState from './components/EmptyState';
 import SearchView, { initialSearchState } from './views/SearchView';
 import LibraryView from './views/LibraryView';
 import AlbumView from './views/AlbumView';
@@ -44,6 +48,7 @@ function Shell() {
   const mainRef = useRef(null);
   const [route, navigate] = useRouter(mainRef);
   const { current, playerRequests } = usePlayer();
+  const { offline } = useConnection();
   const [queueOpen, setQueueOpen] = useState(false);
   const [searchState, setSearchState] = useState(initialSearchState);
   const [pendingSearch, setPendingSearch] = useState(null);
@@ -78,10 +83,15 @@ function Shell() {
   const openArtist = (name) => go({ name: 'search', query: name, category: 'artist' }, { replace: true });
 
   let view;
-  if (route.name === 'search') view = <SearchView state={searchState} setState={setSearchState} navigate={go} pending={pendingSearch} clearPending={clearPending} />;
+  if (offline && route.name === 'search') view = <div className="page"><EmptyState icon={CloudOff} title="Search needs your OhmWaves server"
+    action={<button type="button" className="btn btn--primary" onClick={() => go({ name: 'home' })}>Play your downloads</button>}>
+    You’re offline. Everything you’ve downloaded still plays.
+  </EmptyState></div>;
+  else if (route.name === 'search') view = <SearchView state={searchState} setState={setSearchState} navigate={go} pending={pendingSearch} clearPending={clearPending} />;
   else if (route.name === 'library') view = <LibraryView tab={route.tab || 'playlists'} navigate={go} />;
   else if (route.name === 'collection') view = <CollectionView key={`${route.kind}-${route.id || route.album || ''}`} route={route} navigate={go} />;
   else if (route.name === 'album' && route.album) view = <AlbumView key={route.album.id} album={route.album} />;
+  else if (offline) view = <OfflineHome navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={changeServer} />;
   else view = <HomeView navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={isNativeApp ? changeServer : undefined} />;
 
   return <div className={`app ${current ? 'has-player' : ''} ${queueOpen && current ? 'has-queue' : ''}`}>
@@ -91,6 +101,7 @@ function Shell() {
       {(route.name === 'album' || route.name === 'collection') && <div className="topbar">
         <button type="button" className="icon-btn icon-btn--soft" onClick={() => window.history.back()} aria-label="Go back"><ChevronLeft /></button>
       </div>}
+      <OfflineBanner />
       {view}
     </main>
     {queueOpen && current && <QueuePanel onClose={() => setQueueOpen(false)} />}
@@ -103,14 +114,17 @@ function Shell() {
 }
 
 export default function App() {
-  // The phone app needs to know where the server is before anything loads.
-  const [connected, setConnected] = useState(() => !needsServer());
-  if (!connected) return <ConnectServer onConnected={() => setConnected(true)} />;
+  // The phone app needs to know where the server is before anything loads, unless it's playing downloads offline.
+  const [connected, setConnected] = useState(() => !needsServer() || readOfflineMode());
+  const playOffline = () => { saveOfflineMode(true); setConnected(true); };
+  if (!connected) return <ConnectServer onConnected={() => setConnected(true)} onPlayOffline={playOffline} />;
   return <ToastProvider>
-    <LibraryProvider>
-      <PlayerProvider>
-        <Shell />
-      </PlayerProvider>
-    </LibraryProvider>
+    <ConnectionProvider onNeedServer={() => setConnected(false)}>
+      <LibraryProvider>
+        <PlayerProvider>
+          <Shell />
+        </PlayerProvider>
+      </LibraryProvider>
+    </ConnectionProvider>
   </ToastProvider>;
 }

@@ -4,6 +4,7 @@ import NativeAudio from '../lib/nativeAudio';
 import { durationToSeconds, normalizeTrack, shuffleArray } from '../lib/tracks';
 import { useLibrary } from './LibraryContext';
 import { useToast } from './ToastContext';
+import { useConnection } from './ConnectionContext';
 
 const PlayerContext = createContext(null);
 const ProgressContext = createContext(null); // split out: updates ~4x/second
@@ -21,10 +22,17 @@ const withQid = (track, extra = {}) => { qidCounter += 1; return { ...track, ...
 const notificationArtwork = (local, track) => local?.artUri || track.artUri
   || track.cover?.replace(/^https?:\/\/localhost\/_capacitor_file_/, 'file://') || '';
 
+/** Index of the first playable track from `from`, walking by `step` (+1 forward, -1 back); -1 if none. */
+const findPlayable = (queue, from, step, isPlayable) => {
+  for (let i = from; i >= 0 && i < queue.length; i += step) if (isPlayable(queue[i])) return i;
+  return -1;
+};
+
 const isTypingTarget = (el) => el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName));
 
 export function PlayerProvider({ children }) {
   const { findLocal } = useLibrary();
+  const { offline } = useConnection();
   const { notify } = useToast();
   const audioRef = useRef(null);
   /** One audio engine for the app's lifetime, created on first use. The phone app plays natively so music survives the background. */
@@ -44,7 +52,10 @@ export function PlayerProvider({ children }) {
   const current = queue[index] || null;
   const state = useRef({});
   // Latest state for event handlers and async callbacks, without re-subscribing listeners.
-  useLayoutEffect(() => { state.current = { queue, index, repeat, shuffle, current, findLocal }; });
+  /** Offline, only music saved on this device can play. */
+  const isPlayable = useCallback((track) => !offline || (!!track && !!(track.localUri || track.relative_path || findLocal(track))),
+    [offline, findLocal]);
+  useLayoutEffect(() => { state.current = { queue, index, repeat, shuffle, current, findLocal, isPlayable, offline }; });
   const listen = useRef({ track: null, ms: 0, last: null, started: false });
   const fetchingMore = useRef(false);
   const errorStreak = useRef(0);
@@ -101,21 +112,24 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const next = useCallback(async (userInitiated = true) => {
-    const { queue: q, index: i, repeat: r } = state.current;
+    const { queue: q, index: i, repeat: r, isPlayable: playable, offline: isOffline } = state.current;
     const reason = userInitiated ? 'skip' : 'ended';
-    if (i < q.length - 1) return goTo(i + 1, reason);
-    if (r === 'all' && q.length) return goTo(0, reason);
+    const ahead = findPlayable(q, i + 1, 1, playable);
+    if (ahead !== -1) return goTo(ahead, reason);
+    const first = r === 'all' ? findPlayable(q, 0, 1, playable) : -1;
+    if (first !== -1) return goTo(first, reason);
     finalizeListen(reason);
-    const added = await fetchMore();
+    const added = isOffline ? 0 : await fetchMore();
     if (added) setIndex(state.current.index + 1);
     else { getAudio().pause(); if (!userInitiated) getAudio().currentTime = 0; }
     return undefined;
   }, [getAudio, fetchMore, finalizeListen, goTo]);
 
   const previous = useCallback(() => {
-    const { index: i } = state.current;
-    if (getAudio().currentTime > 3 || i <= 0) { getAudio().currentTime = 0; return; }
-    goTo(i - 1, 'switch');
+    const { queue: q, index: i, isPlayable: playable } = state.current;
+    const back = findPlayable(q, i - 1, -1, playable);
+    if (getAudio().currentTime > 3 || back === -1) { getAudio().currentTime = 0; return; }
+    goTo(back, 'switch');
   }, [getAudio, goTo]);
 
   const togglePlay = useCallback(() => {
@@ -129,32 +143,36 @@ export function PlayerProvider({ children }) {
     const chosen = tracks[startIndex];
     if (!chosen) return;
     if (state.current.current?.id === chosen.id) { togglePlay(); return; }
+    if (!state.current.isPlayable(chosen)) { notify(`“${chosen.title}” isn’t downloaded, so it can’t play offline.`, { tone: 'error' }); return; }
     finalizeListen('switch');
-    let list = tracks.map((t) => withQid(t));
-    let start = startIndex;
+    // Offline, the queue keeps only the downloaded songs from the list.
+    const kept = tracks.map((t, n) => [t, n]).filter(([t]) => state.current.isPlayable(t));
+    let list = kept.map(([t]) => withQid(t));
+    let start = kept.findIndex(([, n]) => n === startIndex);
     unshuffled.current = null;
     if (state.current.shuffle) {
       unshuffled.current = list;
-      list = [list[startIndex], ...shuffleArray(list.filter((_, i) => i !== startIndex))];
+      list = [list[start], ...shuffleArray(list.filter((_, i) => i !== start))];
       start = 0;
     }
     setQueue(list);
     setIndex(start);
     setSource(label);
     setSourceKind(kind);
-  }, [finalizeListen, togglePlay]);
+  }, [finalizeListen, notify, togglePlay]);
 
   const shufflePlay = useCallback((tracks, label = '', kind = 'playlist') => {
-    if (!tracks.length) return;
+    const playable = tracks.filter((t) => state.current.isPlayable(t));
+    if (!playable.length) { if (tracks.length) notify('None of these songs are downloaded, so they can’t play offline.', { tone: 'error' }); return; }
     finalizeListen('switch');
-    const list = tracks.map((t) => withQid(t));
+    const list = playable.map((t) => withQid(t));
     unshuffled.current = list;
     setShuffle(true);
     setQueue(shuffleArray(list));
     setIndex(0);
     setSource(label);
     setSourceKind(kind);
-  }, [finalizeListen]);
+  }, [finalizeListen, notify]);
 
   /** Insert into the queue; with nothing playing, the track simply starts. */
   const insertTrack = useCallback((track, position) => {
@@ -166,11 +184,13 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const playNext = useCallback((track) => {
+    if (!state.current.isPlayable(track)) { notify(`“${track.title}” isn’t downloaded, so it can’t play offline.`, { tone: 'error' }); return; }
     insertTrack(track, (_, i) => i + 1);
     notify(`“${track.title}” will play next`);
   }, [insertTrack, notify]);
 
   const addToQueue = useCallback((track) => {
+    if (!state.current.isPlayable(track)) { notify(`“${track.title}” isn’t downloaded, so it can’t play offline.`, { tone: 'error' }); return; }
     // User-queued songs go before autoplay suggestions, like Spotify.
     insertTrack(track, (q, i) => { const auto = q.findIndex((t, n) => n > i && t.autoplay); return auto === -1 ? q.length : auto; });
     notify(`Added “${track.title}” to queue`);
@@ -284,6 +304,13 @@ export function PlayerProvider({ children }) {
       listen.current = { track, ms: 0, last: null, started: true };
       return;
     }
+    if (!state.current.isPlayable(track)) {
+      // Queued while online but not downloaded: skip it offline.
+      audio.pause();
+      setBuffering(false);
+      nextRef.current(false);
+      return;
+    }
     const local = track.localUri || track.relative_path ? track : state.current.findLocal(track);
     const url = local?.localUri || (local?.relative_path
       ? apiUrl(`/api/stream/${encodePath(local.relative_path)}`)
@@ -317,10 +344,11 @@ export function PlayerProvider({ children }) {
   // Keep autoplay one step ahead and pre-resolve the next stream so skips feel instant.
   useEffect(() => {
     if (index < 0) return;
+    if (offline) return; // no recommendations or streams without the server
     if (queue.length - index - 1 <= 1 && repeat === 'off') fetchMore();
     const upcoming = queue[index + 1];
     if (upcoming && !findLocal(upcoming)) warmTrack(upcoming);
-  }, [index, queue, repeat, fetchMore, findLocal]);
+  }, [index, queue, repeat, fetchMore, findLocal, offline]);
 
   // Lock screen, headset buttons and hardware media keys.
   useEffect(() => {
@@ -355,10 +383,10 @@ export function PlayerProvider({ children }) {
   const isCurrent = useCallback((track) => !!current && !!track && current.id === track.id, [current]);
 
   const value = useMemo(() => ({
-    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests,
+    current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests, isPlayable,
     playFrom, shufflePlay, togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo,
     toggleShuffle, cycleRepeat, setVolume, isCurrent,
-  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests, playFrom, shufflePlay,
+  }), [current, queue, index, isPlaying, isBuffering, shuffle, repeat, source, sourceKind, volume, playerRequests, isPlayable, playFrom, shufflePlay,
     togglePlay, next, previous, playNext, addToQueue, removeFromQueue, jumpTo, toggleShuffle, cycleRepeat, setVolume, isCurrent]);
 
   const progressValue = useMemo(() => ({ ...progress, seek }), [progress, seek]);

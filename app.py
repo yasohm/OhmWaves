@@ -197,6 +197,11 @@ def index():
         return send_from_directory(dist_dir, "index.html")
     return render_template("index.html")
 
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Cheap reachability check for the phone app's offline mode."""
+    return api_ok({"status": "ok"})
+
 @app.route("/assets/<path:filename>")
 def serve_assets(filename):
     assets_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist", "assets")
