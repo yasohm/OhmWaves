@@ -2,5 +2,12 @@
   "appId": "com.ohmwave.music",
   "appName": "OhmWave",
   "webDir": "dist",
-  "server": { "cleartext": true }
+  "backgroundColor": "#0f0f0e",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "backgroundColor": "#0f0f0e"
+  }
 }

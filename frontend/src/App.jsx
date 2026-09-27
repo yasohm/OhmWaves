@@ -14,6 +14,8 @@ import LibraryView from './views/LibraryView';
 import AlbumView from './views/AlbumView';
 import CollectionView from './views/CollectionView';
 import Welcome from './components/Welcome';
+import ConnectServer from './components/ConnectServer';
+import { isNativeApp, needsServer, setServer } from './lib/api';
 
 const WELCOME_KEY = 'ohmwave:welcomed';
 const hasSeenWelcome = () => { try { return localStorage.getItem(WELCOME_KEY) === '1'; } catch { return true; } };
@@ -65,6 +67,7 @@ function Shell() {
     if (next) go(next);
   };
   // From the full-screen player: replace its history entry so Back doesn't reopen it.
+  const changeServer = () => { setServer(''); window.location.reload(); };
   const openArtist = (name) => go({ name: 'search', query: name, category: 'artist' }, { replace: true });
 
   let view;
@@ -72,7 +75,7 @@ function Shell() {
   else if (route.name === 'library') view = <LibraryView tab={route.tab || 'playlists'} navigate={go} />;
   else if (route.name === 'collection') view = <CollectionView key={`${route.kind}-${route.id || route.album || ''}`} route={route} navigate={go} />;
   else if (route.name === 'album' && route.album) view = <AlbumView key={route.album.id} album={route.album} />;
-  else view = <HomeView navigate={go} onShowWelcome={() => setShowWelcome(true)} />;
+  else view = <HomeView navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={isNativeApp ? changeServer : undefined} />;
 
   return <div className={`app ${current ? 'has-player' : ''} ${queueOpen && current ? 'has-queue' : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
@@ -93,6 +96,9 @@ function Shell() {
 }
 
 export default function App() {
+  // The phone app needs to know where the server is before anything loads.
+  const [connected, setConnected] = useState(() => !needsServer());
+  if (!connected) return <ConnectServer onConnected={() => setConnected(true)} />;
   return <ToastProvider>
     <LibraryProvider>
       <PlayerProvider>

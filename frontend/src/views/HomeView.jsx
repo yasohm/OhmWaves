@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Bell, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Omega } from 'lucide-react';
+import { Bell, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Server } from 'lucide-react';
+import OhmMark from '../components/OhmMark';
 import { greeting } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
@@ -50,7 +51,7 @@ function FeatureCard({ track, tracks }) {
   </section>;
 }
 
-export default function HomeView({ navigate, onShowWelcome }) {
+export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
   const { feed, status, refreshing, reload } = useHomeFeed();
   const player = usePlayer();
   const { likes, jobs } = useLibrary();
@@ -69,7 +70,7 @@ export default function HomeView({ navigate, onShowWelcome }) {
 
   return <div className="page page--home">
     <header className="home-top">
-      <Omega className="home-top__logo mobile-only" aria-hidden="true" strokeWidth={2.6} />
+      <OhmMark className="home-top__logo mobile-only" />
       <h1>{greeting()}</h1>
       <div className="home-top__actions">
         <button type="button" className="icon-btn icon-btn--lg" onClick={() => navigate({ name: 'library', tab: 'downloaded' })}
@@ -80,6 +81,7 @@ export default function HomeView({ navigate, onShowWelcome }) {
           { label: 'Refresh recommendations', icon: RefreshCw, onSelect: reload },
           { label: 'Download settings', icon: Download, onSelect: () => navigate({ name: 'library', tab: 'downloaded' }) },
           { label: 'Show welcome screen', icon: Sparkles, onSelect: onShowWelcome },
+          ...(onChangeServer ? [{ label: 'Change server', icon: Server, onSelect: onChangeServer }] : []),
         ]} />
       </div>
     </header>
@@ -101,8 +103,11 @@ export default function HomeView({ navigate, onShowWelcome }) {
     {status === 'loading' && <><ShelfSkeleton /><ShelfSkeleton /></>}
 
     {status === 'error' && <EmptyState icon={WifiOff} title="Couldn’t load your home feed"
-      action={<button type="button" className="btn btn--primary" onClick={reload}>Try again</button>}>
-      Make sure the OhmWave server is running and connected to the internet.
+      action={<div className="empty-state__actions">
+        <button type="button" className="btn btn--primary" onClick={reload}>Try again</button>
+        {onChangeServer && <button type="button" className="btn btn--outline" onClick={onChangeServer}>Change server</button>}
+      </div>}>
+      Make sure the OhmWave server is running on your computer and connected to the internet.
     </EmptyState>}
 
     {status === 'ready' && feed.cold_start && filter === 'all' && <section className="welcome-card">

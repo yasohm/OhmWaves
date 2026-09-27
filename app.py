@@ -181,6 +181,11 @@ def serve_assets(filename):
         return send_from_directory(assets_dir, filename)
     return jsonify({"error": "Asset not found"}), 404
 
+@app.route("/<any('favicon.svg', 'icon-192.png', 'apple-touch-icon.png'):filename>")
+def serve_icon(filename):
+    dist_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+    return send_from_directory(dist_dir, filename, max_age=86400)
+
 @app.route("/api/search", methods=["POST"])
 def search():
     data = request.get_json() or {}

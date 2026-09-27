@@ -529,6 +529,16 @@ svg { flex-shrink: 0; }
 
 /* ------------------------------------------------------------- welcome */
 .welcome:focus { outline: none; }
+.connect { justify-content: center; overflow-y: auto; }
+.connect p { margin-bottom: var(--space-8); }
+.connect__form { display: grid; gap: var(--space-3); }
+.connect__field { display: flex; align-items: center; gap: var(--space-3); height: 56px; padding: 0 var(--space-4); border-radius: var(--radius-lg); background: var(--cream); color: var(--bg); }
+.connect__field:focus-within { box-shadow: 0 0 0 3px rgb(255 106 43 / 0.6); }
+.connect__field svg { width: 22px; height: 22px; }
+.connect__field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; color: var(--bg); font-family: var(--font-mono); font-size: 16px; }
+.connect .connect__help { margin: 0 0 var(--space-3); color: var(--text-2); font-size: 14px; line-height: 1.45; }
+.connect .connect__help.is-error { color: #ff8a6b; }
+.empty-state__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); }
 .welcome { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; padding: var(--safe-top) 0 calc(var(--space-8) + var(--safe-bottom)); background: var(--bg); animation: fade-in 400ms var(--ease); }
 @keyframes fade-in { from { opacity: 0; } }
 .welcome__waves { position: absolute; inset: 0 0 auto; width: 100%; height: 48%; }
@@ -536,7 +546,11 @@ svg { flex-shrink: 0; }
 @keyframes drift { to { transform: translateX(-14px) translateY(6px); } }
 .welcome__content { position: relative; width: min(100%, 480px); margin: 0 auto; padding: 0 var(--space-6); }
 .welcome__brand { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-5); }
-.welcome__brand svg { width: 34px; height: 34px; color: var(--accent); }
+.welcome__brand svg { width: 52px; height: 52px; color: var(--accent); }
+/* Brand mark: the omega body draws in, then the wave tails unfurl outward from its feet before rippling. */
+.ohm-mark--animated path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ohm-draw 900ms var(--ease) 150ms forwards; }
+.ohm-mark--animated path + path { stroke-dashoffset: -1; animation-duration: 650ms; animation-delay: 650ms; }
+@keyframes ohm-draw { to { stroke-dashoffset: 0; } }
 .welcome h1 { font-size: clamp(40px, 12vw, 56px); line-height: 1; letter-spacing: -0.02em; }
 .welcome p { margin: var(--space-5) 0 var(--space-10); color: #cfcbc0; font-size: 18px; line-height: 1.45; }
 .welcome__actions { display: grid; gap: var(--space-3); }

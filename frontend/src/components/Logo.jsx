@@ -1,8 +1,8 @@
-import { Omega } from 'lucide-react';
+import OhmMark from './OhmMark';
 
 export default function Logo({ compact = false }) {
   return <span className="logo" aria-label="OhmWave">
-    <Omega className="logo__mark" aria-hidden="true" strokeWidth={2.6} />
+    <OhmMark className="logo__mark" />
     {!compact && <span className="logo__word">OhmWave</span>}
   </span>;
 }

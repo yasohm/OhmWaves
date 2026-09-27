@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Omega } from 'lucide-react';
+import OhmMark from './OhmMark';
 
 // Layered sine "currents": brightest in front, fading to grey behind.
 const WAVES = [
@@ -31,7 +31,7 @@ export default function Welcome({ onStart, onBrowse, onLibrary }) {
     </svg>
     <div className="welcome__content">
       <div className="welcome__brand">
-        <Omega aria-hidden="true" strokeWidth={2.6} />
+        <OhmMark animated />
         <span className="mono-label">Music · Mixes · Downloads</span>
       </div>
       <h1 id="welcome-title">OhmWave</h1>

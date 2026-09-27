@@ -162,13 +162,26 @@ npm run android
 npm run ios
 ```
 
-The browser client defaults to same-origin API requests. For a native device, set `VITE_API_URL` to the reachable address of the machine running Flask before building, for example:
+The phone app is only the interface: search, streaming, downloads and recommendations run on the Flask server on your computer. Keep `python app.py` running and connect the phone to the same Wi-Fi.
+
+On first launch the app asks for the server address, for example `192.168.1.10:5000`. Use your computer's local IP (`hostname -I` on Linux), not `127.0.0.1`. To prefill that screen, build with `VITE_DEFAULT_SERVER`. `VITE_API_URL` still works if you want to hard-code the server and skip the screen. If your computer's IP changes, choose **Change server** from the avatar menu.
+
+### Build an Android APK without Android Studio
+
+Requirements: JDK 21 and the Android SDK. Gradle downloads the SDK platform and build tools it needs once the SDK license has been accepted (for example with `sdkmanager --licenses`).
 
 ```bash
-VITE_API_URL=http://192.168.1.10:5000 npm run mobile:sync
+cd frontend
+VITE_DEFAULT_SERVER=http://192.168.1.10:5000 npm run build
+npx cap sync android
+cd android
+echo "sdk.dir=$HOME/Android/Sdk" > local.properties
+./gradlew assembleDebug
 ```
 
-The Flask server enables CORS for the Capacitor client. Ensure the device and server can reach one another; do not use `127.0.0.1` as the API host on a physical device.
+The APK is written to `frontend/android/app/build/outputs/apk/debug/app-debug.apk`. Copy it to the phone and open it; Android asks you to allow installs from that source. With USB debugging enabled you can use `adb install -r app-debug.apk` instead.
+
+The app talks to the server over plain HTTP on your local network, so the Android build allows cleartext traffic. Only use it on a network you trust.
 
 ## Command-line client
 

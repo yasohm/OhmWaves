@@ -1,7 +1,31 @@
-export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-export const USER_ID = 'local-listener';
+import { Capacitor } from '@capacitor/core';
 
-export const apiUrl = (path) => `${API_URL}${path}`;
+export const USER_ID = 'local-listener';
+const SERVER_KEY = 'ohmwave:server';
+
+/** The native app talks to the OhmWave server on your computer; the web app uses its own origin. */
+export const isNativeApp = Capacitor.isNativePlatform();
+export const DEFAULT_SERVER = import.meta.env.VITE_DEFAULT_SERVER || '';
+
+export function normalizeServer(input) {
+  const text = (input || '').trim().replace(/\/+$/, '');
+  if (!text) return '';
+  return /^https?:\/\//i.test(text) ? text : `http://${text}`;
+}
+
+const readServer = () => {
+  try { return localStorage.getItem(SERVER_KEY) || ''; } catch { return ''; }
+};
+let apiBase = normalizeServer(import.meta.env.VITE_API_URL || (isNativeApp ? readServer() : ''));
+
+export const getServer = () => apiBase;
+export const needsServer = () => isNativeApp && !apiBase;
+export function setServer(url) {
+  apiBase = normalizeServer(url);
+  try { if (apiBase) localStorage.setItem(SERVER_KEY, apiBase); else localStorage.removeItem(SERVER_KEY); } catch { /* kept for this session only */ }
+}
+
+export const apiUrl = (path) => `${apiBase}${path}`;
 export const apiFetch = (path, options) => fetch(apiUrl(path), options);
 
 /** Encode each segment of a library path so names with #, ? or spaces survive. */
