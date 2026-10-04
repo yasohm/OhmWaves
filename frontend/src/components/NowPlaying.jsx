@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Download, Heart, ListMusic, Share, Speaker, UserRound } from 'lucide-react';
+import { ChevronDown, CirclePlus, Download, Heart, ListMusic, Share, Speaker, UserRound } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { useLibrary } from '../context/LibraryContext';
 import { useConnection } from '../context/ConnectionContext';
+import { usePlaylists } from '../context/PlaylistsContext';
 import { useToast } from '../context/ToastContext';
 import Artwork from './Artwork';
 import QueuePanel from './QueuePanel';
@@ -16,6 +17,7 @@ const KIND_LABEL = { playlist: 'playlist', album: 'album', artist: 'artist', sea
 export default function NowPlaying({ onClose, onOpenArtist }) {
   const { current, source, sourceKind, queue, index, jumpTo } = usePlayer();
   const { isLiked, toggleLike, download, findLocal } = useLibrary();
+  const { requestAddToPlaylist } = usePlaylists();
   const { notify } = useToast();
   const { offline } = useConnection();
   const [showQueue, setShowQueue] = useState(false);
@@ -56,6 +58,7 @@ export default function NowPlaying({ onClose, onOpenArtist }) {
       </div>
       <TrackMenu label="More options" triggerClass="icon-btn icon-btn--lg" items={[
         { label: `Go to ${artistName}`, icon: UserRound, onSelect: () => onOpenArtist(artistName) },
+        ...(!offline && current.videoId ? [{ label: 'Add to playlist', icon: CirclePlus, onSelect: () => requestAddToPlaylist(current) }] : []),
         ...(canDownload ? [{ label: 'Download', icon: Download, onSelect: () => download(current) }] : []),
         { label: 'Share', icon: Share, onSelect: share },
       ]} />

@@ -1,8 +1,9 @@
-import { Download, Heart, ListEnd, ListPlus, Loader2, Pause, Play, Sparkles, Trash2 } from 'lucide-react';
+import { CircleMinus, CirclePlus, Download, Heart, ListEnd, ListPlus, Loader2, Pause, Play, Sparkles, Trash2 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
 import { warmTrack } from '../lib/api';
 import { useLibrary } from '../context/LibraryContext';
 import { useConnection } from '../context/ConnectionContext';
+import { usePlaylists } from '../context/PlaylistsContext';
 import Artwork from './Artwork';
 import Equalizer from './Equalizer';
 import TrackMenu from './TrackMenu';
@@ -37,11 +38,12 @@ function TrackRow({ track, position, isCurrent, isPlaying, isBuffering, liked, s
 
 /**
  * Spotify-style track list. `source` labels the queue ("Playing from …").
- * `onDelete` enables the delete action (library only).
+ * `onDelete` enables the delete action (library only); `onRemoveFromPlaylist` the remove action (your playlists).
  */
-export default function TrackList({ tracks, source = '', sourceKind = 'playlist', showAlbum = true, showReason = false, onDelete, numbered = true }) {
+export default function TrackList({ tracks, source = '', sourceKind = 'playlist', showAlbum = true, showReason = false, onDelete, onRemoveFromPlaylist, numbered = true }) {
   const player = usePlayer();
   const library = useLibrary();
+  const { requestAddToPlaylist } = usePlaylists();
   const { offline } = useConnection();
 
   return <ol className={`track-list ${showAlbum ? 'has-album' : ''}`}>
@@ -53,7 +55,9 @@ export default function TrackList({ tracks, source = '', sourceKind = 'playlist'
           { label: 'Play next', icon: ListPlus, onSelect: () => player.playNext(track) },
           { label: 'Add to queue', icon: ListEnd, onSelect: () => player.addToQueue(track) },
         ]),
+        ...(!offline && track.videoId ? [{ label: 'Add to playlist', icon: CirclePlus, onSelect: () => requestAddToPlaylist(track) }] : []),
         ...(!offline && track.videoId && !track.localUri && !library.findLocal(track) ? [{ label: 'Download', icon: Download, onSelect: () => library.download(track) }] : []),
+        ...(onRemoveFromPlaylist && !offline ? [{ label: 'Remove from this playlist', icon: CircleMinus, onSelect: () => onRemoveFromPlaylist(track) }] : []),
         ...(onDelete ? [{ label: 'Delete from device', icon: Trash2, tone: 'danger', onSelect: () => onDelete(track) }] : []),
       ];
       return <TrackRow key={`${track.id}-${i}`} track={track} position={numbered ? i + 1 : '•'}

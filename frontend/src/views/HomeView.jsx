@@ -3,7 +3,7 @@ import { Bell, CloudOff, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Dow
 import OhmMark from '../components/OhmMark';
 import { greeting } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
-import { useLibrary } from '../context/LibraryContext';
+import { isJobDone, useLibrary } from '../context/LibraryContext';
 import { useConnection } from '../context/ConnectionContext';
 import { isNativeApp } from '../lib/api';
 import useHomeFeed from '../hooks/useHomeFeed';
@@ -59,7 +59,7 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
   const { likes, jobs } = useLibrary();
   const { setOfflineMode } = useConnection();
   const [filter, setFilter] = useState('all');
-  const downloading = Object.values(jobs).some((j) => j.status !== (j.device ? 'saved' : 'completed'));
+  const downloading = Object.values(jobs).some((j) => !isJobDone(j));
 
   const sections = feed?.sections || [];
   const recent = sections.find((s) => s.id === 'recent')?.tracks || [];

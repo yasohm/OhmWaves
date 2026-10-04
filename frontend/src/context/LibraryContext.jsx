@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, apiUrl, isNativeApp, USER_ID } from '../lib/api';
-import { libraryFileToTrack, normalizeTrack } from '../lib/tracks';
+import { libraryFileToTrack, normalizeTrack, toRemoteTrack } from '../lib/tracks';
 import * as offline from '../lib/offline';
 import { useToast } from './ToastContext';
 import { useConnection } from './ConnectionContext';
@@ -13,6 +13,8 @@ const SETTINGS_KEY = 'ohmwave:download-settings';
 const LIKES_KEY = 'ohmwave:likes-cache';
 const readCachedLikes = () => { try { const list = JSON.parse(localStorage.getItem(LIKES_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; } };
 const cacheLikes = (list) => { try { localStorage.setItem(LIKES_KEY, JSON.stringify(list)); } catch { /* cache only */ } };
+// Songs saved to the phone at the same time: enough to keep the connection busy without starving playback.
+const PHONE_PARALLEL = 2;
 const NEEDS_SERVER = 'needs your OhmWaves server. You’re offline right now.';
 const readSettings = () => {
   try { return { format: 'mp3', quality: '320', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return { format: 'mp3', quality: '320' }; }
@@ -36,6 +38,7 @@ export function LibraryProvider({ children }) {
   // Phone app: `files` are downloads saved on this phone. Web: tracks in the server's downloads folder.
   const filesRef = useRef([]);
   const commitFiles = useCallback((next) => { filesRef.current = next; setFiles(next); }, []);
+  const inFlightRef = useRef(new Set()); // videoIds being saved to the phone right now
 
   const refreshFiles = useCallback(async () => {
     if (isNativeApp) {
@@ -61,19 +64,38 @@ export function LibraryProvider({ children }) {
     return () => Object.values(timers).forEach(clearInterval);
   }, [refreshFiles, setLikes]);
 
+  // Songs saved before covers were stored on the phone (or whose cover failed) get it the next time we're online.
+  const artRepairStarted = useRef(false);
+  useEffect(() => {
+    if (!isNativeApp || isOffline || filesState !== 'ready' || artRepairStarted.current) return;
+    const missing = filesRef.current.filter((e) => !e.artUri && e.remoteCover);
+    if (!missing.length) return;
+    artRepairStarted.current = true;
+    (async () => {
+      for (const entry of missing) {
+        const art = await offline.saveArtwork(entry);
+        if (!art.artUri) continue;
+        const next = filesRef.current.map((e) => (e.videoId === entry.videoId && !e.artUri ? { ...e, ...art } : e));
+        commitFiles(next);
+        offline.writeIndex(next);
+      }
+    })();
+  }, [isOffline, filesState, commitFiles]);
+
   const likedIds = useMemo(() => new Set(likes.map((t) => t.id)), [likes]);
   const isLiked = useCallback((track) => !!track && likedIds.has(track.id), [likedIds]);
 
   const toggleLike = useCallback(async (track) => {
     if (isOffline) { notify(`Liking songs ${NEEDS_SERVER}`, { tone: 'error' }); return; }
     const wasLiked = likedIds.has(track.id);
-    setLikes((list) => (wasLiked ? list.filter((t) => t.id !== track.id) : [track, ...list]));
+    const liked = toRemoteTrack(track);
+    setLikes((list) => (wasLiked ? list.filter((t) => t.id !== track.id) : [liked, ...list]));
     try {
-      const body = { user_id: USER_ID, track_id: track.id, title: track.title, artist: track.artist, album: track.album || '', cover: track.cover };
+      const body = { user_id: USER_ID, track_id: track.id, title: liked.title, artist: liked.artist, album: liked.album, cover: liked.cover };
       if (wasLiked) await api.delete('/api/likes', body); else await api.post('/api/likes', body);
       notify(wasLiked ? 'Removed from Liked Songs' : 'Added to Liked Songs');
     } catch (error) {
-      setLikes((list) => (wasLiked ? [track, ...list] : list.filter((t) => t.id !== track.id)));
+      setLikes((list) => (wasLiked ? [liked, ...list] : list.filter((t) => t.id !== track.id)));
       notify(error.message, { tone: 'error' });
     }
   }, [isOffline, likedIds, notify, setLikes]);
@@ -90,7 +112,7 @@ export function LibraryProvider({ children }) {
     timersRef.current[jobId] = setInterval(async () => {
       try {
         const status = await api.get(`/api/download/status/${jobId}`);
-        setJobs((all) => ({ ...all, [jobId]: { ...status, label } }));
+        setJobs((all) => ({ ...all, [jobId]: { ...all[jobId], ...status, label } }));
         if (status.status !== 'completed') return;
         clearInterval(timersRef.current[jobId]);
         delete timersRef.current[jobId];
@@ -110,50 +132,43 @@ export function LibraryProvider({ children }) {
   }, [commitFiles]);
 
   /**
-   * Phone downloads: the server converts each track into a temporary folder, the phone copies it into app
-   * storage as soon as it's ready, then the server deletes its copy.
+   * Phone downloads: each song streams from the server straight into this phone's app storage. The server only
+   * relays the audio and keeps no copy. Two songs transfer at a time.
    */
-  const pollDeviceJob = useCallback((jobId, label, tracks) => {
-    const byId = new Map(tracks.map((t) => [t.videoId, t]));
-    const started = new Set();
-    let transfers = Promise.resolve();
+  const saveToPhone = useCallback(async (jobId, label, tracks) => {
+    const parts = {}; // videoId -> fraction of that song received
     let saved = 0;
-    let lostOnTheWay = 0;
-    let finishing = false;
+    let failed = 0;
+    let nextIndex = 0;
     const update = (patch) => setJobs((all) => (all[jobId] ? { ...all, [jobId]: { ...all[jobId], ...patch } } : all));
+    const report = () => update({ saved, failed, saving: Object.values(parts).reduce((sum, part) => sum + part, 0) });
 
-    timersRef.current[jobId] = setInterval(async () => {
-      if (finishing) return;
-      let status;
-      try { status = await api.get(`/api/download/status/${jobId}`); } catch { return; } // server busy; retry next tick
-      (status.files || []).forEach((file, i) => {
-        if (started.has(i)) return;
-        started.add(i);
-        transfers = transfers.then(async () => {
-          try {
-            const track = { ...file, ...byId.get(file.videoId) };
-            addOffline(await offline.saveTrack(track, apiUrl(file.file_url), file.ext, (part) => update({ saving: part })));
-            saved += 1;
-          } catch {
-            lostOnTheWay += 1;
-          }
-          update({ saved, saving: 0 });
-        });
-      });
-      update({ ...status, label, saved });
-      if (status.status !== 'completed') return;
+    tracks.forEach((t) => inFlightRef.current.add(t.videoId));
+    const worker = async () => {
+      while (nextIndex < tracks.length) {
+        const track = tracks[nextIndex];
+        nextIndex += 1;
+        const id = encodeURIComponent(track.videoId);
+        parts[track.videoId] = 0;
+        try {
+          const { ext, file_url: fileUrl } = await api.get(`/api/offline/${id}`);
+          addOffline(await offline.saveTrack(track, apiUrl(fileUrl), ext, (part) => { parts[track.videoId] = part; report(); }));
+          saved += 1;
+        } catch {
+          failed += 1;
+        }
+        delete parts[track.videoId];
+        inFlightRef.current.delete(track.videoId);
+        report();
+      }
+    };
+    update({ status: 'in_progress' });
+    await Promise.all(Array.from({ length: Math.min(PHONE_PARALLEL, tracks.length) }, worker));
 
-      finishing = true;
-      clearInterval(timersRef.current[jobId]);
-      delete timersRef.current[jobId];
-      await transfers;
-      api.delete(`/api/download/${jobId}`).catch(() => {}); // the server also purges leftovers after a few hours
-      update({ status: 'saved' });
-      const failed = (status.errors?.length || 0) + lostOnTheWay;
-      if (!saved) notify(`Couldn’t download ${label}.`, { tone: 'error' });
-      else notify(failed ? `Saved ${saved} of ${status.total} to your phone. ${failed} failed.` : `${label} saved to your phone`);
-      setTimeout(() => setJobs((all) => { const { [jobId]: _done, ...rest } = all; return rest; }), 4000);
-    }, 1000);
+    update({ status: 'saved' });
+    if (!saved) notify(`Couldn’t download ${label}. Check your connection to the OhmWaves server and try again.`, { tone: 'error' });
+    else notify(failed ? `Saved ${saved} of ${tracks.length} to your phone. ${failed} failed.` : `${label} saved to your phone`);
+    setTimeout(() => setJobs((all) => { const { [jobId]: _done, ...rest } = all; return rest; }), 4000);
   }, [addOffline, notify]);
 
   const offlineById = useMemo(() => new Map(isNativeApp ? files.map((e) => [e.videoId, offline.entryToTrack(e)]) : []), [files]);
@@ -169,23 +184,26 @@ export function LibraryProvider({ children }) {
 
   const download = useCallback(async (tracks) => {
     if (isOffline) { notify(`Downloading ${NEEDS_SERVER}`, { tone: 'error' }); return; }
-    const list = (Array.isArray(tracks) ? tracks : [tracks]).filter((t) => t.videoId && !findLocal(t));
-    if (!list.length) { notify(isNativeApp ? 'Already downloaded to this phone.' : 'These tracks are already on your device.'); return; }
+    const list = (Array.isArray(tracks) ? tracks : [tracks]).filter((t) => t.videoId && !findLocal(t) && !inFlightRef.current.has(t.videoId));
+    if (!list.length) { notify(isNativeApp ? 'Already downloaded or downloading to this phone.' : 'These tracks are already on your device.'); return; }
     const label = list.length === 1 ? `“${list[0].title}”` : `${list.length} tracks`;
+    notify(`Downloading ${label}…`);
     try {
+      if (isNativeApp) {
+        const jobId = `phone-${Date.now()}`;
+        setJobs((all) => ({ ...all, [jobId]: { status: 'queued', total: list.length, saved: 0, label, device: true, ids: list.map((t) => t.videoId) } }));
+        await saveToPhone(jobId, label, list);
+        return;
+      }
       // `thumbnail` makes the tagger embed square album art instead of a video frame.
       const payload = list.map((t) => ({ ...t, thumbnail: t.cover || undefined }));
-      const data = await api.post('/api/download', {
-        tracks: payload, format: settings.format, quality: settings.quality, target: isNativeApp ? 'device' : 'library',
-      });
-      setJobs((all) => ({ ...all, [data.job_id]: { status: 'queued', total: list.length, completed: 0, label, device: isNativeApp } }));
-      notify(`Downloading ${label}…`);
-      if (isNativeApp) pollDeviceJob(data.job_id, label, list);
-      else pollJob(data.job_id, label);
+      const data = await api.post('/api/download', { tracks: payload, format: settings.format, quality: settings.quality });
+      setJobs((all) => ({ ...all, [data.job_id]: { status: 'queued', total: list.length, completed: 0, label, ids: list.map((t) => t.videoId) } }));
+      pollJob(data.job_id, label);
     } catch (error) {
       notify(error.message, { tone: 'error' });
     }
-  }, [findLocal, isOffline, notify, pollDeviceJob, pollJob, settings]);
+  }, [findLocal, isOffline, notify, pollJob, saveToPhone, settings]);
 
   const deleteFile = useCallback(async (track) => {
     if (isNativeApp) {
@@ -211,10 +229,28 @@ export function LibraryProvider({ children }) {
 
   const downloadedTracks = useMemo(() => files.map(isNativeApp ? offline.entryToTrack : libraryFileToTrack), [files]);
 
+  /** Songs being downloaded right now, so playlist and album pages can show their progress. */
+  const downloadingIds = useMemo(() => new Set(Object.values(jobs).filter((j) => !isJobDone(j)).flatMap((j) => j.ids || [])), [jobs]);
+
+  /**
+   * On the phone, use the saved copy of each song when there is one: it plays from disk and shows the saved cover
+   * (online covers don't load offline).
+   */
+  const preferLocal = useCallback((tracks) => (isNativeApp ? tracks.map((t) => findLocal(t) || t) : tracks), [findLocal]);
+
+  /** How much of a song list is downloaded: `{ total, saved, downloading }` (counting only downloadable songs). */
+  const downloadStatus = useCallback((tracks) => {
+    const songs = tracks.filter((t) => t.videoId || t.localUri || t.relative_path);
+    const saved = songs.filter((t) => t.localUri || t.relative_path || findLocal(t)).length;
+    const downloading = songs.filter((t) => downloadingIds.has(t.videoId) && !t.localUri && !findLocal(t)).length;
+    return { total: songs.length, saved, downloading };
+  }, [downloadingIds, findLocal]);
+
   const value = useMemo(() => ({
     likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles,
-    jobs, download, deleteFile, requestDelete, settings, setSettings, findLocal,
-  }), [likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles, jobs, download, deleteFile, requestDelete, settings, setSettings, findLocal]);
+    jobs, download, deleteFile, requestDelete, settings, setSettings, findLocal, preferLocal, downloadStatus,
+  }), [likes, isLiked, toggleLike, files, downloadedTracks, filesState, refreshFiles, jobs, download, deleteFile, requestDelete, settings,
+    setSettings, findLocal, preferLocal, downloadStatus]);
 
   return <LibraryContext.Provider value={value}>
     {children}
@@ -226,3 +262,6 @@ export function LibraryProvider({ children }) {
 }
 
 export const useLibrary = () => useContext(LibraryContext);
+
+/** Whether a download job has finished (phone downloads end at 'saved', library downloads at 'completed'). */
+export const isJobDone = (job) => job.status === (job.device ? 'saved' : 'completed');

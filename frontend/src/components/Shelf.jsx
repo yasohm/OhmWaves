@@ -65,3 +65,14 @@ export function AlbumCard({ album, onOpen }) {
     </button>
   </article>;
 }
+
+/** A playlist, album or artist from your library, opening its page. */
+export function CollectionCard({ title, subtitle, cover, variant, rounded = false, onOpen }) {
+  return <article className={`card ${rounded ? 'card--artist' : ''}`}>
+    <button type="button" className="card__hit" onClick={onOpen} aria-label={`Open ${title}${subtitle ? `, ${subtitle}` : ''}`}>
+      <span className="card__art"><Artwork src={cover} title={title} variant={variant} rounded={rounded} /></span>
+      <strong className="card__title">{title}</strong>
+      {subtitle && <small className="card__subtitle">{subtitle}</small>}
+    </button>
+  </article>;
+}

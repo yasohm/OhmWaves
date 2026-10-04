@@ -16,7 +16,10 @@ export default function AlbumView({ album }) {
     const controller = new AbortController();
     api.get(`/api/album/${encodeURIComponent(album.id)}`, { signal: controller.signal })
       .then((data) => {
-        setTracks((data.tracks || []).map((t) => normalizeTrack(t, { cover: album.cover, album: album.title })));
+        setTracks((data.tracks || []).map((t, i) => ({
+          ...normalizeTrack(t, { cover: album.cover, album: album.title }),
+          albumId: album.id, albumArtist: album.artist || null, trackNumber: i + 1,
+        })));
         setStatus('ready');
       })
       .catch((error) => { if (error.name !== 'AbortError') setStatus('error'); });

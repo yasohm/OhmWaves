@@ -26,6 +26,17 @@ export function normalizeTrack(item, fallback = {}) {
   };
 }
 
+/**
+ * The shareable form of a track: what the server stores for likes and playlists. Drops phone-only fields
+ * (saved file, saved cover) so a liked downloaded song still works after its download is deleted.
+ */
+export function toRemoteTrack(track) {
+  return {
+    id: track.videoId || track.id, videoId: track.videoId, title: track.title, artist: track.artist,
+    album: track.album || '', duration: track.duration || '', cover: track.remoteCover || track.cover || null,
+  };
+}
+
 /** Library files come from disk: stream locally and read their embedded artwork. */
 export function libraryFileToTrack(file) {
   return {

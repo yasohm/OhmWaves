@@ -1,5 +1,4 @@
 import os
-import shutil
 import sys
 import uuid
 import threading
@@ -9,6 +8,7 @@ from flask import Flask, Response, render_template, request, jsonify, send_file,
 from werkzeug.security import safe_join
 from yt_music_scraper import YTMusicScraper
 from recommendation_service import RecommendationService, VIDEO_ID_RE
+from playlist_service import PlaylistNotFound, PlaylistService
 
 app = Flask(__name__)
 
@@ -17,12 +17,13 @@ def add_mobile_cors_headers(response):
     # Capacitor serves the UI from capacitor://localhost on native devices.
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Range"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
     response.headers["Access-Control-Expose-Headers"] = "Content-Length, Content-Range, Accept-Ranges"
     return response
 
 scraper = YTMusicScraper(download_dir="downloads")
 recommendations = RecommendationService(catalog=scraper)
+playlists = PlaylistService()
 
 
 def api_error(message, code="VALIDATION_ERROR", status=400):
@@ -44,28 +45,6 @@ def library_path(relative_path):
     return safe_join(scraper.download_dir, relative_path)
 
 download_jobs = {}
-
-# Phone downloads are converted here, pulled by the app into its private storage, then deleted.
-# The leading dot keeps them out of the library listing.
-DEVICE_DIR = ".device"
-DEVICE_TTL_SECONDS = 6 * 3600
-
-
-def device_job_dir(job_id):
-    return os.path.join(scraper.download_dir, DEVICE_DIR, job_id)
-
-
-def purge_stale_device_files():
-    """Remove phone downloads the app never collected (e.g. the phone went offline mid-transfer)."""
-    root = os.path.join(scraper.download_dir, DEVICE_DIR)
-    if not os.path.isdir(root):
-        return
-    cutoff = time.time() - DEVICE_TTL_SECONDS
-    for name in os.listdir(root):
-        path = os.path.join(root, name)
-        if os.path.isdir(path) and os.path.getmtime(path) < cutoff:
-            shutil.rmtree(path, ignore_errors=True)
-            download_jobs.pop(name, None)
 
 @app.route("/api/events", methods=["POST"])
 def record_listening_event():
@@ -96,6 +75,53 @@ def list_user_likes(user_id):
     if not valid_user_id(user_id):
         return api_error("Invalid user id")
     return api_ok({"tracks": recommendations.list_likes(user_id)})
+
+# ------------------------------------------------------------------ playlists
+# Every call names the user, like likes do; the playlist must belong to that user.
+
+def _playlist_call(action):
+    """Run a playlist operation, turning validation and ownership problems into clear API errors."""
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id") or request.args.get("user_id")
+    if not valid_user_id(user_id):
+        return api_error("Invalid user id")
+    try:
+        return action(user_id, data)
+    except PlaylistNotFound as exc:
+        return api_error(str(exc), "NOT_FOUND", 404)
+    except (TypeError, ValueError) as exc:
+        return api_error(str(exc))
+
+@app.route("/api/playlists", methods=["GET"])
+def list_playlists():
+    return _playlist_call(lambda user_id, _: api_ok({"playlists": playlists.list_playlists(user_id)}))
+
+@app.route("/api/playlists", methods=["POST"])
+def create_playlist():
+    return _playlist_call(lambda user_id, data: api_ok(
+        {"playlist": playlists.create(user_id, data.get("name"), data.get("tracks") or [])}, 201))
+
+@app.route("/api/playlists/<playlist_id>", methods=["PATCH"])
+def rename_playlist(playlist_id):
+    return _playlist_call(lambda user_id, data: api_ok({"playlist": playlists.rename(user_id, playlist_id, data.get("name"))}))
+
+@app.route("/api/playlists/<playlist_id>", methods=["DELETE"])
+def delete_playlist(playlist_id):
+    def action(user_id, _):
+        playlists.delete(user_id, playlist_id)
+        return api_ok({"id": playlist_id})
+    return _playlist_call(action)
+
+@app.route("/api/playlists/<playlist_id>/tracks", methods=["POST"])
+def add_playlist_tracks(playlist_id):
+    def action(user_id, data):
+        playlist, added = playlists.add_tracks(user_id, playlist_id, data.get("tracks"))
+        return api_ok({"playlist": playlist, "added": added})
+    return _playlist_call(action)
+
+@app.route("/api/playlists/<playlist_id>/tracks/<video_id>", methods=["DELETE"])
+def remove_playlist_track(playlist_id, video_id):
+    return _playlist_call(lambda user_id, _: api_ok({"playlist": playlists.remove_track(user_id, playlist_id, video_id)}))
 
 @app.route("/api/home/<user_id>", methods=["GET"])
 def get_home(user_id):
@@ -130,37 +156,83 @@ def get_recommendations(user_id):
 
 STREAM_HEADERS = ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges")
 
-def _open_upstream(video_id, force=False):
+STREAM_UNAVAILABLE = "This track is unavailable right now."
+AUDIO_EXTENSIONS = {"audio/mp4": "m4a", "audio/webm": "webm"}
+
+def _open_upstream(video_id, byte_range, force=False):
     info = scraper.resolve_stream(video_id, force=force)
     headers = dict(info["headers"])
-    headers["Range"] = request.headers.get("Range", "bytes=0-")
+    headers["Range"] = byte_range
     return info, requests.get(info["url"], headers=headers, stream=True, timeout=20)
+
+def _connect_audio(video_id, byte_range):
+    """Open the track's audio upstream, re-resolving once if the cached URL expired. Returns (info, upstream) or None."""
+    try:
+        info, upstream = _open_upstream(video_id, byte_range)
+        if upstream.status_code in (403, 410):
+            upstream.close()
+            info, upstream = _open_upstream(video_id, byte_range, force=True)
+    except Exception as exc:
+        app.logger.warning("Stream resolution failed for %s: %s", video_id, exc)
+        return None
+    if upstream.status_code >= 400:
+        app.logger.warning("Upstream refused %s with HTTP %s", video_id, upstream.status_code)
+        upstream.close()
+        return None
+    return info, upstream
+
+def _relay(upstream, status, headers):
+    response = Response(stream_with_context(upstream.iter_content(chunk_size=64 * 1024)),
+                        status=status, direct_passthrough=True)
+    for header in headers:
+        if header in upstream.headers:
+            response.headers[header] = upstream.headers[header]
+    response.headers["Cache-Control"] = "no-store"
+    response.call_on_close(upstream.close)
+    return response
 
 @app.route("/api/listen/<video_id>", methods=["GET"])
 def listen(video_id):
     """Stream a track instantly by proxying its audio (with Range support for seeking)."""
     if not VIDEO_ID_RE.match(video_id):
         return api_error("Invalid track id")
+    connected = _connect_audio(video_id, request.headers.get("Range", "bytes=0-"))
+    if not connected:
+        return api_error(STREAM_UNAVAILABLE, "STREAM_UNAVAILABLE", 502)
+    info, upstream = connected
+    response = _relay(upstream, upstream.status_code, STREAM_HEADERS)
+    response.headers.setdefault("Content-Type", info["mime"])
+    return response
+
+@app.route("/api/offline/<video_id>", methods=["GET"])
+def offline_track(video_id):
+    """Get a track ready for the phone to save: resolves its audio and says which file type it will be."""
+    if not VIDEO_ID_RE.match(video_id):
+        return api_error("Invalid track id")
     try:
-        info, upstream = _open_upstream(video_id)
-        if upstream.status_code in (403, 410):
-            upstream.close()
-            info, upstream = _open_upstream(video_id, force=True)
+        info = scraper.resolve_stream(video_id)
     except Exception as exc:
         app.logger.warning("Stream resolution failed for %s: %s", video_id, exc)
-        return api_error("This track is unavailable for streaming right now.", "STREAM_UNAVAILABLE", 502)
-    if upstream.status_code >= 400:
-        upstream.close()
-        return api_error("This track is unavailable for streaming right now.", "STREAM_UNAVAILABLE", 502)
+        return api_error(STREAM_UNAVAILABLE, "STREAM_UNAVAILABLE", 502)
+    return api_ok({"ext": AUDIO_EXTENSIONS.get(info["mime"], "m4a"), "file_url": f"/api/offline/{video_id}/audio"})
 
-    response = Response(stream_with_context(upstream.iter_content(chunk_size=64 * 1024)),
-                        status=upstream.status_code, direct_passthrough=True)
-    for header in STREAM_HEADERS:
-        if header in upstream.headers:
-            response.headers[header] = upstream.headers[header]
-    response.headers.setdefault("Content-Type", info["mime"])
-    response.headers["Cache-Control"] = "no-store"
-    response.call_on_close(upstream.close)
+@app.route("/api/offline/<video_id>/audio", methods=["GET"])
+def offline_track_audio(video_id):
+    """
+    Phone downloads: relay the whole audio file straight to the phone, which saves it in its own storage.
+    Nothing is written on the server.
+    """
+    if not VIDEO_ID_RE.match(video_id):
+        return api_error("Invalid track id")
+    connected = _connect_audio(video_id, "bytes=0-")
+    if not connected:
+        return api_error(STREAM_UNAVAILABLE, "STREAM_UNAVAILABLE", 502)
+    info, upstream = connected
+    # Always a complete file, even when upstream answers the open range with 206.
+    response = _relay(upstream, 200, ("Content-Length",))
+    response.headers["Content-Type"] = info["mime"]
+    ext = AUDIO_EXTENSIONS.get(info["mime"], "m4a")
+    response.headers["Content-Disposition"] = f'attachment; filename="{video_id}.{ext}"'
     return response
 
 @app.route("/api/listen/<video_id>/warm", methods=["POST"])
@@ -245,19 +317,13 @@ def start_download():
     tracks = data.get("tracks", [])
     audio_format = data.get("format", "mp3")
     audio_quality = data.get("quality", "320")
-    target = data.get("target", "library")
 
     if not tracks:
         return jsonify({"error": "No tracks provided for download"}), 400
-    if target not in ("library", "device"):
-        return api_error("Download target must be 'library' or 'device'.")
-    if target == "device":
-        purge_stale_device_files()
 
     job_id = str(uuid.uuid4())
     download_jobs[job_id] = {
         "id": job_id,
-        "target": target,
         "status": "queued",
         "total": len(tracks),
         "current_index": 0,
@@ -294,9 +360,7 @@ def process_download_job(job_id, tracks, audio_format, audio_quality):
             job["current_track"] = f"{track_title} - {artist_name}"
 
         subfolder = ""
-        if job["target"] == "device":
-            subfolder = os.path.join(DEVICE_DIR, job_id)
-        elif artist_name and artist_name != "Unknown Artist":
+        if artist_name and artist_name != "Unknown Artist":
             subfolder = scraper.sanitize_filename(artist_name)
             if album_name and album_name not in ["YouTube Audio", "Single"]:
                 subfolder = os.path.join(subfolder, scraper.sanitize_filename(album_name))
@@ -320,7 +384,7 @@ def process_download_job(job_id, tracks, audio_format, audio_quality):
             if res.get("success"):
                 job["completed"] += 1
                 rel_path = os.path.relpath(res["filepath"], scraper.download_dir)
-                entry = {
+                job["files"].append({
                     "videoId": video_id,
                     "title": track_title,
                     "artist": artist_name,
@@ -328,10 +392,7 @@ def process_download_job(job_id, tracks, audio_format, audio_quality):
                     "filename": res["filename"],
                     "relative_path": rel_path,
                     "ext": os.path.splitext(res["filename"])[1][1:].lower(),
-                }
-                if job["target"] == "device":
-                    entry["file_url"] = f"/api/download/{job_id}/files/{len(job['files'])}"
-                job["files"].append(entry)
+                })
             else:
                 job["errors"].append({"track": track_title, "error": res.get("error")})
 
@@ -349,36 +410,13 @@ def download_status(job_id):
         return jsonify({"error": "Job not found"}), 404
     return jsonify(job)
 
-@app.route("/api/download/<job_id>/files/<int:index>", methods=["GET"])
-def download_device_file(job_id, index):
-    """Hand a converted track to the phone app."""
-    job = download_jobs.get(job_id)
-    if not job or job.get("target") != "device" or index >= len(job["files"]):
-        return api_error("This download is no longer available.", "NOT_FOUND", 404)
-    full_path = library_path(job["files"][index]["relative_path"])
-    if not full_path or not os.path.isfile(full_path):
-        return api_error("This download is no longer available.", "NOT_FOUND", 404)
-    return send_file(full_path, as_attachment=True)
-
-@app.route("/api/download/<job_id>", methods=["DELETE"])
-def finish_device_download(job_id):
-    """The phone has its copies: drop the server-side ones."""
-    job = download_jobs.get(job_id)
-    if not job or job.get("target") != "device":
-        return api_error("Download not found.", "NOT_FOUND", 404)
-    if job["status"] != "completed":
-        return api_error("This download is still in progress.", "CONFLICT", 409)
-    shutil.rmtree(device_job_dir(job_id), ignore_errors=True)
-    download_jobs.pop(job_id, None)
-    return api_ok({"id": job_id})
-
 @app.route("/api/library", methods=["GET"])
 def get_library():
     music_files = []
     supported_exts = (".mp3", ".m4a", ".flac", ".wav", ".opus")
 
     for root, dirs, files in os.walk(scraper.download_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]  # skip phone staging (DEVICE_DIR)
+        dirs[:] = [d for d in dirs if not d.startswith(".")]  # skip hidden folders
         for f in files:
             if f.endswith(supported_exts):
                 full_path = os.path.join(root, f)

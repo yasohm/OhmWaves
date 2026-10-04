@@ -407,6 +407,9 @@ svg { flex-shrink: 0; }
 .library-row:hover .library-item__text strong { text-decoration: underline; text-underline-offset: 3px; }
 .library-row .library-item__art { width: 60px; height: 60px; flex: 0 0 60px; }
 .library-item__art { border-radius: var(--radius-md); }
+.library-item__create { display: grid; place-items: center; aspect-ratio: 1; background: var(--surface-2); color: var(--text); }
+.library-item__create svg { width: 26px; height: 26px; }
+.library-row:hover .library-item__create { background: var(--surface-3); }
 .library-item__text { display: grid; gap: 2px; min-width: 0; }
 .library-item__text strong { overflow: hidden; font-size: 16px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
 .library-item__text small { display: flex; align-items: center; gap: 6px; overflow: hidden; color: var(--text-2); font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
@@ -430,6 +433,8 @@ svg { flex-shrink: 0; }
 .collection-hero h1 { font-size: clamp(30px, 4vw + 10px, 64px); line-height: 1.02; overflow-wrap: anywhere; }
 .collection-hero h1.is-long { font-size: clamp(24px, 2vw + 12px, 36px); }
 .collection-hero__meta { color: var(--text-2); font-size: 14px; }
+.collection-hero__downloads { color: var(--accent); font-size: 13px; font-weight: 600; }
+.download-all.is-done { color: var(--accent); }
 .action-bar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0 var(--space-5); }
 .action-bar .icon-btn { color: var(--text-2); }
 .action-bar .icon-btn:hover:not(:disabled) { color: var(--text); }
@@ -601,11 +606,26 @@ svg { flex-shrink: 0; }
 .download-bar__text small { color: var(--text-2); font-size: 12px; }
 .download-bar__percent { color: var(--accent); font-size: 13px; font-variant-numeric: tabular-nums; }
 
-.dialog { width: min(calc(100% - 2 * var(--gutter)), 420px); padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-2xl); background: var(--surface-2); color: var(--text); box-shadow: var(--shadow-pop); }
+.dialog { width: min(calc(100% - 2 * var(--gutter)), 420px); margin: auto; /* preflight zeroes the margin native dialogs center with */ padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-2xl); background: var(--surface-2); color: var(--text); box-shadow: var(--shadow-pop); }
 .dialog::backdrop { background: rgb(0 0 0 / 0.7); }
 .dialog h2 { font-size: 18px; margin-bottom: var(--space-2); }
 .dialog p { color: var(--text-2); font-size: 14px; }
 .dialog__actions { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-6); }
+.dialog__actions .btn svg.spin { width: 16px; height: 16px; }
+.dialog__field { display: grid; gap: var(--space-2); margin-top: var(--space-4); color: var(--text-2); font-size: 13px; font-weight: 600; }
+.dialog__field input { height: 48px; padding: 0 var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-1); color: var(--text); font-size: 16px; font-weight: 500; outline: none; transition: border-color var(--fast); }
+.dialog__field input:focus { border-color: var(--accent); }
+
+/* Add to playlist: scrolls inside the dialog when you have many playlists. */
+.dialog--list { display: flex; flex-direction: column; max-height: min(80vh, 640px); }
+.dialog--list:not([open]) { display: none; }
+.playlist-picker { display: grid; gap: var(--space-1); margin: var(--space-4) calc(var(--space-2) * -1) 0; overflow-y: auto; overscroll-behavior: contain; }
+.playlist-picker__item { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 56px; padding: var(--space-2); border-radius: var(--radius-lg); text-align: left; transition: background var(--fast); }
+.playlist-picker__item:hover, .playlist-picker__item:focus-visible { background: var(--surface-3); }
+.playlist-picker__art, .playlist-picker__new { width: 48px; height: 48px; flex: 0 0 48px; border-radius: var(--radius-md); }
+.playlist-picker__new { display: grid; place-items: center; background: var(--surface-3); color: var(--text); }
+.playlist-picker__new svg { width: 22px; height: 22px; }
+.playlist-picker__check { width: 18px; height: 18px; margin-left: auto; flex: 0 0 auto; color: var(--accent); }
 
 .bottom-nav { display: none; }
 

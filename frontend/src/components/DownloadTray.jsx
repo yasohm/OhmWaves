@@ -1,19 +1,20 @@
 import { ArrowDown, Check } from 'lucide-react';
-import { useLibrary } from '../context/LibraryContext';
+import { isJobDone, useLibrary } from '../context/LibraryContext';
 
 /** How far along a job is (0–1), whether it's finished, and a short status line. */
 function progressOf(job) {
   const total = job.total || 1;
-  const prepared = (job.completed || 0) + (job.status === 'completed' ? 0 : (job.current_percent || 0) / 100);
-  // Phone downloads have two legs: the server converts, then the phone copies. Each is half the bar.
-  const done = job.device ? job.status === 'saved' : job.status === 'completed';
-  const fraction = done ? 1 : job.device ? (prepared + (job.saved || 0) + (job.saving || 0)) / (2 * total) : prepared / total;
+  const done = isJobDone(job);
+  // Phone downloads stream each song straight to the phone; `saving` is the progress of songs mid-transfer.
   const finished = job.device ? (job.saved || 0) : (job.completed || 0);
+  const fraction = done ? 1 : job.device
+    ? ((job.saved || 0) + (job.failed || 0) + (job.saving || 0)) / total
+    : ((job.completed || 0) + (job.current_percent || 0) / 100) / total;
   const detail = done ? (job.device ? 'Saved to your phone' : 'Saved to your library')
     : job.status === 'queued' ? 'Waiting…'
-      : job.device && job.status === 'completed' ? `Saving to phone · ${finished} of ${job.total}`
+      : job.device ? `Saving to phone · ${finished} of ${job.total}`
         : `${finished} of ${job.total} tracks`;
-  return { fraction: Math.min(1, fraction), done, detail, total: job.total || 1 };
+  return { fraction: Math.min(1, fraction), done, detail, total };
 }
 
 const RING = 2 * Math.PI * 15;

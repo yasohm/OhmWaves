@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, CloudOff } from 'lucide-react';
 import { ToastProvider } from './context/ToastContext';
 import { LibraryProvider } from './context/LibraryContext';
+import { PlaylistsProvider } from './context/PlaylistsContext';
 import { ConnectionProvider, readOfflineMode, saveOfflineMode, useConnection } from './context/ConnectionContext';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { BottomNav, Sidebar } from './components/Navigation';
@@ -20,6 +21,7 @@ import CollectionView from './views/CollectionView';
 import Welcome from './components/Welcome';
 import ConnectServer from './components/ConnectServer';
 import { isNativeApp, needsServer, setServer } from './lib/api';
+import { primaryArtist } from './lib/collections';
 
 const WELCOME_KEY = 'ohmwave:welcomed';
 const hasSeenWelcome = () => { try { return localStorage.getItem(WELCOME_KEY) === '1'; } catch { return true; } };
@@ -80,7 +82,9 @@ function Shell() {
   };
   // From the full-screen player: replace its history entry so Back doesn't reopen it.
   const changeServer = () => { setServer(''); window.location.reload(); };
-  const openArtist = (name) => go({ name: 'search', query: name, category: 'artist' }, { replace: true });
+  // Offline, an artist opens the songs of theirs saved on this phone (search needs the server).
+  const openArtist = (name) => go(offline ? { name: 'collection', kind: 'local-artist', artist: primaryArtist(name) }
+    : { name: 'search', query: name, category: 'artist' }, { replace: true });
 
   let view;
   if (offline && route.name === 'search') view = <div className="page"><EmptyState icon={CloudOff} title="Search needs your OhmWaves server"
@@ -89,7 +93,7 @@ function Shell() {
   </EmptyState></div>;
   else if (route.name === 'search') view = <SearchView state={searchState} setState={setSearchState} navigate={go} pending={pendingSearch} clearPending={clearPending} />;
   else if (route.name === 'library') view = <LibraryView tab={route.tab || 'playlists'} navigate={go} />;
-  else if (route.name === 'collection') view = <CollectionView key={`${route.kind}-${route.id || route.album || ''}`} route={route} navigate={go} />;
+  else if (route.name === 'collection') view = <CollectionView key={`${route.kind}-${route.id || route.album || route.artist || ''}`} route={route} navigate={go} />;
   else if (route.name === 'album' && route.album) view = <AlbumView key={route.album.id} album={route.album} />;
   else if (offline) view = <OfflineHome navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={changeServer} />;
   else view = <HomeView navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={isNativeApp ? changeServer : undefined} />;
@@ -121,9 +125,11 @@ export default function App() {
   return <ToastProvider>
     <ConnectionProvider onNeedServer={() => setConnected(false)}>
       <LibraryProvider>
-        <PlayerProvider>
-          <Shell />
-        </PlayerProvider>
+        <PlaylistsProvider>
+          <PlayerProvider>
+            <Shell />
+          </PlayerProvider>
+        </PlaylistsProvider>
       </LibraryProvider>
     </ConnectionProvider>
   </ToastProvider>;
