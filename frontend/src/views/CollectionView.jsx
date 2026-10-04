@@ -3,6 +3,7 @@ import { ListMusic, Pencil, Search, Trash2 } from 'lucide-react';
 import { useLibrary } from '../context/LibraryContext';
 import { usePlaylists } from '../context/PlaylistsContext';
 import { useConnection } from '../context/ConnectionContext';
+import { useAiFilter } from '../context/AiFilterContext';
 import useHomeFeed from '../hooks/useHomeFeed';
 import { totalDurationLabel } from '../lib/tracks';
 import { albumKey, firstCover, primaryArtist, songCount, sortAlbumTracks } from '../lib/collections';
@@ -19,6 +20,7 @@ export default function CollectionView({ route, navigate }) {
   const library = useLibrary();
   const playlists = usePlaylists();
   const { offline } = useConnection();
+  const ai = useAiFilter();
   const { feed, status } = useHomeFeed({ refreshOnMount: false });
   const playlist = route.kind === 'playlist' ? playlists.getPlaylist(route.id) : null;
 
@@ -46,10 +48,10 @@ export default function CollectionView({ route, navigate }) {
     }
     const section = feed?.sections.find((s) => s.id === route.id);
     return section
-      ? { title: sectionTitle(section), kicker: section.id === 'trending' ? 'Chart' : 'Made for you · OhmWaves', tracks: library.preferLocal(section.tracks),
+      ? { title: sectionTitle(section), kicker: section.id === 'trending' ? 'Chart' : 'Made for you · OhmWaves', tracks: library.preferLocal(ai.visible(section.tracks)),
         ready: true, showReason: section.id === 'for-you', empty: ['Nothing in this mix yet', 'Keep listening and OhmWaves will fill it in.'] }
       : { title: 'Mix', kicker: 'Made for you', tracks: [], ready: status !== 'loading', empty: ['Nothing in this mix yet', 'Keep listening and OhmWaves will fill it in.'] };
-  }, [route, library, playlist, playlists.status, offline, feed, status]);
+  }, [route, library, playlist, playlists.status, offline, feed, status, ai]);
 
   if (config.missing && config.ready) {
     return <div className="page"><EmptyState icon={ListMusic} title="This playlist doesn’t exist anymore"
@@ -74,7 +76,8 @@ export default function CollectionView({ route, navigate }) {
     {config.ready && (config.tracks.length
       ? <TrackList tracks={config.tracks} source={config.title} sourceKind={config.kind || 'playlist'} showReason={config.showReason}
         showAlbum={route.kind !== 'local-album'} onDelete={config.onDelete ? library.requestDelete : undefined}
-        onRemoveFromPlaylist={playlist ? (track) => playlists.removeTrack(playlist, track) : undefined} />
+        onRemoveFromPlaylist={playlist ? (track) => playlists.removeTrack(playlist, track) : undefined}
+        hideAi={route.kind === 'section'} />
       : <EmptyState icon={ListMusic} title={emptyTitle}
         action={!offline && !isLocal && <button type="button" className="btn btn--primary" onClick={() => navigate({ name: 'search' })}>Find music</button>}>
         {emptyText}

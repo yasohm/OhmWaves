@@ -1,0 +1,3 @@
+# Only needed to train the AI-music detector (python -m ai_detector.train). The server runs the trained
+# model with numpy alone.
+scikit-learn>=1.5

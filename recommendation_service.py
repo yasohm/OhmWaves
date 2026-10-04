@@ -249,6 +249,8 @@ class RecommendationService:
             "cover": row.get("cover"),
             "duration": row.get("duration") or "",
         }
+        if row.get("artistId"):
+            track["artistId"] = row["artistId"]  # lets the AI-music filter recognise known AI artists
         if not is_video:
             track["relative_path"] = track_id
         track.update(extra)

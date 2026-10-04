@@ -60,3 +60,5 @@ AGENTS.md
 AGENTS/
 
 ui_exemples/
+# AI-detector training data (features only; rebuilt with python -m ai_detector.build_dataset)
+data/

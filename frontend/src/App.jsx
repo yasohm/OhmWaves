@@ -3,6 +3,7 @@ import { ChevronLeft, CloudOff } from 'lucide-react';
 import { ToastProvider } from './context/ToastContext';
 import { LibraryProvider } from './context/LibraryContext';
 import { PlaylistsProvider } from './context/PlaylistsContext';
+import { AiFilterProvider } from './context/AiFilterContext';
 import { ConnectionProvider, readOfflineMode, saveOfflineMode, useConnection } from './context/ConnectionContext';
 import { PlayerProvider, usePlayer } from './context/PlayerContext';
 import { BottomNav, Sidebar } from './components/Navigation';
@@ -18,6 +19,7 @@ import SearchView, { initialSearchState } from './views/SearchView';
 import LibraryView from './views/LibraryView';
 import AlbumView from './views/AlbumView';
 import CollectionView from './views/CollectionView';
+import AiHiddenView from './views/AiHiddenView';
 import Welcome from './components/Welcome';
 import ConnectServer from './components/ConnectServer';
 import { isNativeApp, needsServer, setServer } from './lib/api';
@@ -93,6 +95,7 @@ function Shell() {
   </EmptyState></div>;
   else if (route.name === 'search') view = <SearchView state={searchState} setState={setSearchState} navigate={go} pending={pendingSearch} clearPending={clearPending} />;
   else if (route.name === 'library') view = <LibraryView tab={route.tab || 'playlists'} navigate={go} />;
+  else if (route.name === 'collection' && route.kind === 'ai-hidden') view = <AiHiddenView />;
   else if (route.name === 'collection') view = <CollectionView key={`${route.kind}-${route.id || route.album || route.artist || ''}`} route={route} navigate={go} />;
   else if (route.name === 'album' && route.album) view = <AlbumView key={route.album.id} album={route.album} />;
   else if (offline) view = <OfflineHome navigate={go} onShowWelcome={() => setShowWelcome(true)} onChangeServer={changeServer} />;
@@ -126,9 +129,11 @@ export default function App() {
     <ConnectionProvider onNeedServer={() => setConnected(false)}>
       <LibraryProvider>
         <PlaylistsProvider>
-          <PlayerProvider>
-            <Shell />
-          </PlayerProvider>
+          <AiFilterProvider>
+            <PlayerProvider>
+              <Shell />
+            </PlayerProvider>
+          </AiFilterProvider>
         </PlaylistsProvider>
       </LibraryProvider>
     </ConnectionProvider>

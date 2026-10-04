@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Bell, CloudOff, Loader2, Pause, Play, RefreshCw, Sparkles, WifiOff, Download, Server } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Bell, BotOff, CloudOff, Loader2, Pause, Play, RefreshCw, ShieldCheck, Sparkles, WifiOff, Download, Server } from 'lucide-react';
 import OhmMark from '../components/OhmMark';
 import { greeting } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
 import { isJobDone, useLibrary } from '../context/LibraryContext';
 import { useConnection } from '../context/ConnectionContext';
+import { useAiFilter } from '../context/AiFilterContext';
 import { isNativeApp } from '../lib/api';
 import useHomeFeed from '../hooks/useHomeFeed';
 import { ArtistCard, Shelf, TrackCard } from '../components/Shelf';
@@ -61,7 +62,8 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
   const [filter, setFilter] = useState('all');
   const downloading = Object.values(jobs).some((j) => !isJobDone(j));
 
-  const sections = feed?.sections || [];
+  const ai = useAiFilter();
+  const sections = useMemo(() => (feed?.sections || []).map((s) => (s.tracks ? { ...s, tracks: ai.visible(s.tracks) } : s)), [feed, ai]);
   const recent = sections.find((s) => s.id === 'recent')?.tracks || [];
   const forYou = sections.find((s) => s.id === 'for-you')?.tracks || [];
   const trending = sections.find((s) => s.id === 'trending')?.tracks || [];
@@ -83,6 +85,8 @@ export default function HomeView({ navigate, onShowWelcome, onChangeServer }) {
         <TrackMenu label="Account and settings" triggerClass="avatar" trigger={<span aria-hidden="true">Y</span>} items={[
           { label: 'Refresh recommendations', icon: RefreshCw, onSelect: reload },
           { label: 'Download settings', icon: Download, onSelect: () => navigate({ name: 'library', tab: 'downloaded' }) },
+          { label: ai.enabled ? 'AI music filter: on' : 'AI music filter: off', icon: ShieldCheck, onSelect: () => ai.setEnabled(!ai.enabled) },
+          { label: 'Songs hidden as AI', icon: BotOff, onSelect: () => navigate({ name: 'collection', kind: 'ai-hidden' }) },
           ...(isNativeApp ? [{ label: 'Offline mode', icon: CloudOff, onSelect: () => setOfflineMode(true) }] : []),
           { label: 'Show welcome screen', icon: Sparkles, onSelect: onShowWelcome },
           ...(onChangeServer ? [{ label: 'Change server', icon: Server, onSelect: onChangeServer }] : []),

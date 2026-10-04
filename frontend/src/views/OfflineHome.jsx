@@ -104,7 +104,7 @@ export default function OfflineHome({ navigate, onShowWelcome, onChangeServer })
         <header className="shelf__header">
           <div className="shelf__titles"><h2 id="offline-songs-title">All songs</h2></div>
         </header>
-        <TrackList tracks={tracks} source={SOURCE} onDelete={library.requestDelete} />
+        <TrackList tracks={tracks} source={SOURCE} onDelete={library.requestDelete} hideAi={false} />
       </section>
     </>}
   </div>;

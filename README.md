@@ -241,6 +241,17 @@ The Flask API is local and currently has no authentication. Request and response
 | `POST` | `/api/recommendations/<user_id>/next` | Autoplay: tracks to follow `seed`, excluding `exclude` ids |
 | `POST` | `/api/recommendations/retrain` | Train the optional multi-listener ALS model |
 | `GET` | `/api/recommendations/<user_id>` | Return recommendations; accepts `?limit=1..50` |
+| `GET` | `/api/offline/<video_id>` | Prepare a phone download: returns the file type and `file_url` |
+| `GET` | `/api/offline/<video_id>/audio` | Relay a track's whole audio file to the phone (nothing is stored on the server) |
+| `GET` | `/api/playlists?user_id=` | A user's playlists with their tracks |
+| `POST` | `/api/playlists` | Create a playlist (`user_id`, `name`, optional `tracks`) |
+| `PATCH` | `/api/playlists/<id>` | Rename a playlist (`user_id`, `name`) |
+| `DELETE` | `/api/playlists/<id>` | Delete a playlist (`user_id`) |
+| `POST` | `/api/playlists/<id>/tracks` | Add `tracks` to a playlist (duplicates are skipped) |
+| `DELETE` | `/api/playlists/<id>/tracks/<video_id>` | Remove a song from a playlist (`user_id`) |
+| `GET` / `POST` | `/api/ai-filter` | AI music filter status, or turn it on and off (`enabled`) |
+| `GET` | `/api/ai-filter/flagged?since=` | Songs found to be AI since an ISO time |
+| `POST` | `/api/ai-filter/mark` | Your verdict for a song: `track` and `verdict` (`ai` or `human`) |
 
 Example search request:
 
@@ -287,6 +298,28 @@ The service reads these optional environment variables:
 | `VITE_API_URL` | empty (same origin) | Base URL embedded in the Vite client for API requests |
 
 `ohmwave.db`, generated downloads, frontend build output, and local environment files are ignored by Git.
+
+## AI music filter
+
+YouTube doesn't label AI-generated music, so OhmWaves detects it itself and keeps it out of search, Home, albums, mixes and autoplay. In your own playlists, Liked Songs and downloads AI songs stay but are tagged **AI**. A song counts as AI when, in order of priority:
+
+1. **You said so.** "Mark as AI" or "Not AI, show it" in any song's menu always wins.
+2. **Its artist is a confirmed AI artist** in the [Soul Over AI](https://souloverai.com) directory, matched by YouTube channel id. The list is refreshed daily into `models/ai_artists.json`.
+3. **The trained detector** (`ai_detector/`) scores its audio above the model's threshold. Songs that haven't been checked are scanned in the background (only the first ~2 MB of audio is downloaded) and filtered from then on.
+
+The detector looks for a "fakeprint": AI song generators turn their output into sound with upsampling layers that leave small, evenly spaced peaks in the spectrum. A logistic-regression model trained on OhmWaves' own labelled YouTube data scores those features. The server runs it with numpy alone.
+
+To train or retrain it, for example when new generators appear:
+
+```bash
+pip install -r requirements-ai-training.txt
+python -m ai_detector.build_dataset --ai 450 --human 450   # resumable; keeps only features in data/ai_detector/
+python -m ai_detector.train                                # writes models/ai_detector.npz and a report
+```
+
+Then restart the server. Training data: AI songs come from the YouTube channels of confirmed AI artists; human songs come from albums released 2005–2019, before AI song generators existed, across the same genres. The test score holds out whole artists, so it reflects how the model does on AI artists it has never heard. Each new model version re-scans songs as they come up. The settings menu's **Songs hidden as AI** page shows what was hidden and why, and turns the filter off.
+
+AI artist data by Soul Over AI (https://souloverai.com), licensed CC BY 4.0. OhmWaves reads only artist channel ids from it, unchanged.
 
 ## Local-use and security notes
 

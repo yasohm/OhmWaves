@@ -5,6 +5,7 @@ import { durationToSeconds, normalizeTrack, shuffleArray } from '../lib/tracks';
 import { useLibrary } from './LibraryContext';
 import { useToast } from './ToastContext';
 import { useConnection } from './ConnectionContext';
+import { useAiFilter } from './AiFilterContext';
 
 const PlayerContext = createContext(null);
 const ProgressContext = createContext(null); // split out: updates ~4x/second
@@ -33,6 +34,7 @@ const isTypingTarget = (el) => el && (el.isContentEditable || ['INPUT', 'TEXTARE
 export function PlayerProvider({ children }) {
   const { findLocal } = useLibrary();
   const { offline } = useConnection();
+  const { isHidden } = useAiFilter();
   const { notify } = useToast();
   const audioRef = useRef(null);
   /** One audio engine for the app's lifetime, created on first use. The phone app plays natively so music survives the background. */
@@ -55,7 +57,9 @@ export function PlayerProvider({ children }) {
   /** Offline, only music saved on this device can play. */
   const isPlayable = useCallback((track) => !offline || (!!track && !!(track.localUri || track.relative_path || findLocal(track))),
     [offline, findLocal]);
-  useLayoutEffect(() => { state.current = { queue, index, repeat, shuffle, current, findLocal, isPlayable, offline }; });
+  /** Moving on by itself (next, previous, end of song) never lands on an AI song; playing one on purpose still works. */
+  const canAutoPlay = useCallback((track) => isPlayable(track) && !isHidden(track), [isPlayable, isHidden]);
+  useLayoutEffect(() => { state.current = { queue, index, repeat, shuffle, current, findLocal, isPlayable, canAutoPlay, offline }; });
   const listen = useRef({ track: null, ms: 0, last: null, started: false });
   const fetchingMore = useRef(false);
   const errorStreak = useRef(0);
@@ -112,7 +116,7 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const next = useCallback(async (userInitiated = true) => {
-    const { queue: q, index: i, repeat: r, isPlayable: playable, offline: isOffline } = state.current;
+    const { queue: q, index: i, repeat: r, canAutoPlay: playable, offline: isOffline } = state.current;
     const reason = userInitiated ? 'skip' : 'ended';
     const ahead = findPlayable(q, i + 1, 1, playable);
     if (ahead !== -1) return goTo(ahead, reason);
@@ -126,7 +130,7 @@ export function PlayerProvider({ children }) {
   }, [getAudio, fetchMore, finalizeListen, goTo]);
 
   const previous = useCallback(() => {
-    const { queue: q, index: i, isPlayable: playable } = state.current;
+    const { queue: q, index: i, canAutoPlay: playable } = state.current;
     const back = findPlayable(q, i - 1, -1, playable);
     if (getAudio().currentTime > 3 || back === -1) { getAudio().currentTime = 0; return; }
     goTo(back, 'switch');

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { normalizeTrack, totalDurationLabel } from '../lib/tracks';
 import CollectionHero from '../components/CollectionHero';
 import TrackList from '../components/TrackList';
+import { useAiFilter } from '../context/AiFilterContext';
 import { ListSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -26,7 +27,8 @@ export default function AlbumView({ album }) {
     return () => controller.abort();
   }, [album]);
 
-  const list = tracks || [];
+  const ai = useAiFilter();
+  const list = ai.visible(tracks || []);
   const meta = [album.artist, album.year, list.length ? `${list.length} ${list.length === 1 ? 'song' : 'songs'}` : '', totalDurationLabel(list)].filter(Boolean).join(' · ');
 
   return <div className="page page--collection">

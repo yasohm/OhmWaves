@@ -718,3 +718,25 @@ svg { flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ------------------------------------------------------ AI music filter */
+.page--ai-filter { padding-top: var(--space-12); } /* room for the back button */
+.ai-tag { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; line-height: 1; flex: 0 0 auto; }
+.ai-filter-card { display: grid; gap: var(--space-4); margin-bottom: var(--space-8); padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-1); }
+.ai-filter-card__row { display: flex; align-items: flex-start; gap: var(--space-4); }
+.ai-filter-card__row > div { flex: 1; min-width: 0; }
+.ai-filter-card__icon { width: 28px; height: 28px; flex: 0 0 auto; color: var(--accent); }
+.ai-filter-card h2 { font-size: 17px; margin-bottom: var(--space-1); }
+.ai-filter-card p { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+.ai-filter-card__stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); margin: 0; }
+.ai-filter-card__stats div { padding: var(--space-3); border-radius: var(--radius-lg); background: var(--surface-2); }
+.ai-filter-card__stats dt { color: var(--text-2); font-size: 12px; }
+.ai-filter-card__stats dd { margin: 2px 0 0; font-size: 17px; font-weight: 700; }
+.ai-filter-card__note { font-size: 13px !important; }
+.switch { position: relative; width: 48px; height: 28px; flex: 0 0 48px; border-radius: var(--radius-full); background: var(--surface-3); transition: background var(--fast); }
+.switch span { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--text); transition: transform var(--fast) var(--ease); }
+.switch.is-on { background: var(--accent); }
+.switch.is-on span { transform: translateX(20px); }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.credit { margin-top: var(--space-8); color: var(--text-2); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch span { transition: none; } }

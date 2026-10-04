@@ -113,6 +113,7 @@ class YTMusicScraper:
                     "id": browse_id,
                     "title": item.get("title"),
                     "artist": self._extract_artist_name(item.get("artists")),
+                    "artistId": self._first_artist_id(item.get("artists")),
                     "year": item.get("year", ""),
                     "thumbnails": item.get("thumbnails", []),
                     "tracks": []
@@ -153,6 +154,7 @@ class YTMusicScraper:
                         "id": vid,
                         "title": track.get("title"),
                         "artist": self._extract_artist_name(track.get("artists")) or artist_name,
+                        "artistId": self._first_artist_id(track.get("artists")) or self._first_artist_id(album_data.get("artists")),
                         "album": album_title,
                         "duration": track.get("duration", ""),
                         "duration_seconds": track.get("duration_seconds", 0),
@@ -235,6 +237,7 @@ class YTMusicScraper:
             "videoId": vid,
             "title": item.get("title", "Unknown Title"),
             "artist": artist_name,
+            "artistId": self._first_artist_id(artists),
             "album": album_name,
             "duration": item.get("duration") or item.get("length") or "",
             "thumbnails": thumbnails,
@@ -352,6 +355,15 @@ class YTMusicScraper:
                 self._stream_cache = {k: v for k, v in self._stream_cache.items() if v["expires_at"] > now}
             self._stream_cache[video_id] = entry
         return entry
+
+    @staticmethod
+    def _first_artist_id(artists):
+        """The main artist's YouTube channel id (used to recognise known AI artists)."""
+        if isinstance(artists, list):
+            for artist in artists:
+                if isinstance(artist, dict) and str(artist.get("id") or "").startswith("UC"):
+                    return artist["id"]
+        return None
 
     def _extract_artist_name(self, artists):
         if isinstance(artists, list) and len(artists) > 0:

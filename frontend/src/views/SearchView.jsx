@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { Loader2, Pause, Play, Search, SearchX, X } from 'lucide-react';
 import { api, warmTrack } from '../lib/api';
 import { bestThumbnail, normalizeTrack } from '../lib/tracks';
 import { usePlayer } from '../context/PlayerContext';
 import TrackList from '../components/TrackList';
+import { useAiFilter } from '../context/AiFilterContext';
 import { AlbumCard, Shelf } from '../components/Shelf';
 import { ListSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
@@ -64,7 +65,10 @@ function TopResult({ track, tracks, source }) {
 export default function SearchView({ state, setState, navigate, pending, clearPending }) {
   const inputRef = useRef(null);
   const abortRef = useRef(null);
-  const { query, category, status, results, error, recent } = state;
+  const { query, category, status, results: rawResults, error, recent } = state;
+  const ai = useAiFilter();
+  // Songs flagged as AI while the results are on screen drop out right away.
+  const results = useMemo(() => (rawResults ? { ...rawResults, tracks: ai.visible(rawResults.tracks) } : rawResults), [rawResults, ai]);
 
   const runSearch = useCallback(async (q, cat) => {
     const text = q.trim();

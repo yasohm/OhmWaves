@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 import threading
 import time
 import requests
@@ -9,6 +10,7 @@ from werkzeug.security import safe_join
 from yt_music_scraper import YTMusicScraper
 from recommendation_service import RecommendationService, VIDEO_ID_RE
 from playlist_service import PlaylistNotFound, PlaylistService
+from ai_filter_service import AIFilterService
 
 app = Flask(__name__)
 
@@ -24,6 +26,7 @@ def add_mobile_cors_headers(response):
 scraper = YTMusicScraper(download_dir="downloads")
 recommendations = RecommendationService(catalog=scraper)
 playlists = PlaylistService()
+ai_filter = AIFilterService(scraper=scraper)
 
 
 def api_error(message, code="VALIDATION_ERROR", status=400):
@@ -123,11 +126,87 @@ def add_playlist_tracks(playlist_id):
 def remove_playlist_track(playlist_id, video_id):
     return _playlist_call(lambda user_id, _: api_ok({"playlist": playlists.remove_track(user_id, playlist_id, video_id)}))
 
+# ------------------------------------------------------------- AI-music filter
+
+def hide_ai(payload):
+    """Remove AI-generated songs (and confirmed AI artists or their albums) from any track-bearing response."""
+    if not isinstance(payload, dict) or not ai_filter.enabled():
+        return payload
+    hidden = 0
+
+    def tracks(items, artist_id=None):
+        nonlocal hidden
+        if artist_id:  # songs on an artist page belong to that artist
+            items = [dict(t, artistId=t.get("artistId") or artist_id) for t in items]
+        kept, removed = ai_filter.filter_tracks(items)
+        hidden += removed
+        return kept
+
+    def known_ai(item):
+        return bool(item.get("artistId") or item.get("id")) and (item.get("artistId") or item.get("id")) in ai_filter.ai_channels
+
+    for key in ("songs", "tracks", "recommendations"):
+        if isinstance(payload.get(key), list):
+            payload[key] = tracks(payload[key], payload.get("artistId"))
+    if isinstance(payload.get("artists"), list):
+        kept_artists = []
+        for artist in payload["artists"]:
+            if isinstance(artist, dict) and artist.get("type") == "artist" and known_ai(artist):
+                hidden += len(artist.get("songs") or []) or 1
+                continue
+            if isinstance(artist, dict) and isinstance(artist.get("songs"), list):
+                artist["songs"] = tracks(artist["songs"], artist.get("id"))
+            kept_artists.append(artist)
+        payload["artists"] = kept_artists
+    if isinstance(payload.get("albums"), list):
+        kept_albums = []
+        for album in payload["albums"]:
+            if isinstance(album, dict) and album.get("artistId") in ai_filter.ai_channels:
+                hidden += 1
+                continue
+            if isinstance(album, dict) and isinstance(album.get("tracks"), list):
+                album["tracks"] = tracks(album["tracks"], album.get("artistId"))
+            kept_albums.append(album)
+        payload["albums"] = kept_albums
+    for section in payload.get("sections") or []:
+        if isinstance(section, dict) and isinstance(section.get("tracks"), list):
+            section["tracks"] = tracks(section["tracks"])
+    if hidden:
+        payload["ai_hidden"] = payload.get("ai_hidden", 0) + hidden
+    return payload
+
+@app.route("/api/ai-filter", methods=["GET"])
+def ai_filter_status():
+    return api_ok(ai_filter.status())
+
+@app.route("/api/ai-filter", methods=["POST"])
+def ai_filter_settings():
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data.get("enabled"), bool):
+        return api_error("Send enabled: true or false.")
+    ai_filter.set_enabled(data["enabled"])
+    return api_ok(ai_filter.status())
+
+@app.route("/api/ai-filter/flagged", methods=["GET"])
+def ai_filter_flagged():
+    """Songs found to be AI since `since` (an ISO time), so the app can drop them from what it shows."""
+    since = request.args.get("since", "")[:40]
+    return api_ok({"tracks": ai_filter.flagged_since(since), "now": datetime.now(timezone.utc).isoformat()})
+
+@app.route("/api/ai-filter/mark", methods=["POST"])
+def ai_filter_mark():
+    data = request.get_json(silent=True) or {}
+    track = data.get("track") if isinstance(data.get("track"), dict) else {}
+    try:
+        return api_ok({"track": ai_filter.mark(track, data.get("verdict"))})
+    except ValueError as exc:
+        return api_error(str(exc))
+
 @app.route("/api/home/<user_id>", methods=["GET"])
 def get_home(user_id):
     if not valid_user_id(user_id):
         return api_error("Invalid user id")
-    return api_ok(recommendations.home(user_id))
+    return api_ok(hide_ai(recommendations.home(user_id)))
 
 @app.route("/api/recommendations/retrain", methods=["POST"])
 def retrain_recommendations():
@@ -144,13 +223,13 @@ def get_next_tracks(user_id):
                                              limit=data.get("limit", 10))
     except (TypeError, ValueError) as exc:
         return api_error(str(exc))
-    return api_ok({"tracks": tracks})
+    return api_ok(hide_ai({"tracks": tracks}))
 
 @app.route("/api/recommendations/<user_id>", methods=["GET"])
 def get_recommendations(user_id):
     try:
         limit = request.args.get("limit", 20, type=int)
-        return jsonify({"user_id": user_id, "recommendations": recommendations.recommend(user_id, limit)})
+        return jsonify(hide_ai({"user_id": user_id, "recommendations": recommendations.recommend(user_id, limit)}))
     except (TypeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -304,12 +383,12 @@ def search():
     else:
         res = scraper.search_tracks(query)
 
-    return jsonify(res)
+    return jsonify(hide_ai(res))
 
 @app.route("/api/album/<browse_id>", methods=["GET"])
 def get_album(browse_id):
     res = scraper.get_album_tracks(browse_id)
-    return jsonify(res)
+    return jsonify(hide_ai(res))
 
 @app.route("/api/download", methods=["POST"])
 def start_download():

@@ -154,7 +154,7 @@ export default function LibraryView({ tab = 'playlists', navigate }) {
       {library.filesState === 'error' && <EmptyState icon={WifiOff} title="Couldn’t read your downloads"
         action={<button type="button" className="btn btn--primary" onClick={library.refreshFiles}>Try again</button>}>The OhmWaves server may be offline.</EmptyState>}
       {library.filesState === 'ready' && (downloadedTracks.length
-        ? <TrackList tracks={downloadedTracks} source="Downloaded" onDelete={library.requestDelete} />
+        ? <TrackList tracks={downloadedTracks} source="Downloaded" onDelete={library.requestDelete} hideAi={false} />
         : <EmptyState icon={ArrowDownToLine} title={filter ? `Nothing matches “${filter}”` : 'No downloads yet'}
           action={!filter && !offline && <button type="button" className="btn btn--primary" onClick={() => navigate({ name: 'search' })}>Find music</button>}>
           {!filter && (isNativeApp
